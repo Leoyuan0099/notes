@@ -1,0 +1,137 @@
+<html>
+<head>
+	<title>c++.html</title>
+	<link type="text/css" rel="stylesheet" href="css/code1.css"/>
+</head>
+<body>
+<div style="width:100%;min-height:800px;overflow:scroll;">
+
+<p>类</p>
+<table border="1px" cellspacing="0px" cellpadding="6px"><tbody valign="top">
+	<tr>
+		<td>
+			<p>声明且定义</p>
+			<p><span class="re">(</span>class<span class="re">|</span>struct<span style="color:#FF0000;">)</span> 类名</p>
+			<p>{</p>
+			<p>&emsp;<span class="re">(</span>访问权限标记<span class="re">|</span>函数成员原型<span class="re">|</span>函数成员定义<span class="re">|</span>数据成员声明<span class="re">|</span>友元函数的函数原型</p>
+			<p>&emsp;<span class="re">)*</span></p>
+			<p>};</p>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			<p>声明且不定义</p>
+			<p>class 类名;</p>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			<p>访问权限标记</p>
+			<p><span class="code"><span class="pa">访问权限符</span>:</span></p>
+			<table border="1px" cellspacing="0px" cellpadding="6px"><tbody valign="top">
+				<tr>
+					<td>
+					</td>
+					<td>
+						<p>不能访问</p>
+					</td>
+					<td>
+						<p>能访问</p>
+					</td>
+				</tr>
+				<tr >
+					<td valign="middle">
+						<p>public</p>
+					</td>
+					<td>
+						<p>/</p>
+					</td>
+					<td>
+						<p>所有函数</p>
+					</td>
+				</tr>
+				<tr>
+					<td valign="middle">
+						<p>protect</p>
+					</td>
+					<td>
+						<p>全局函数：不是当前类的友元函数且不是任何1个派生类的友元函数</p>
+						<p>其它类的函数成员：不是当前类的友元函数且不是任何1个派生类的友元函数</p>
+					</td>
+					<td>
+						<p>当前类的友元函数、派生类的友元函数</p>
+						<p>当前类的函数成员、派生类的函数成员</p>
+					</td>
+				</tr>
+				<tr>
+					<td valign="middle">
+						<p>private</p>
+					</td>
+					<td>
+						<p>全局函数：不是当前类的友元函数</p>
+						<p>其它类的函数成员：不是当前类的友元函数</p>
+					</td>
+					<td>
+						<p>当前类的友元函数</p>
+						<p>当前类的函数成员</p>
+					</td>
+				</tr>
+			</tbody></table>
+			<p>1、定义时使用<span class="code">class</span>，类定义体中默认访问权限是private；定义时使用<span class="code">struct</span>，类定义体中默认访问权限是public。</p>
+			<p>2、作用域：从访问权限标记到下一个访问权限标记或从访问权限标记到类定义体结束。</p>
+			<p>！！！1个对象的函数成员可以访问1个同类对象的private成员。</p>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			<p>函数成员</p>
+			<p>1、编译器尝试内联在类定义体内定义的函数成员。</p>
+			<p>2、在类定义体外定义函数成员，在函数名前插入<span class="code"><span class="pa">类名</span>::</span>。</p>
+			<p>3、按函数名分类</p>
+			<table border="1px" cellspacing="0px" cellpadding="6px"><tbody valign="top">
+				<tr>
+					<td>
+						<p>构造函数</p>
+						<p>1、函数名是类名，存储类型和访问限定是非static非const，不指定返回值数据类型，返回值数据类型是类名（只能<span class="code">return;</span>，不能<span class="code">return(void)<span class="pa">表达式</span>;</span>）（自动返回生成的对象）。</p>
+						<p>2、在函数体执行前先调用基类的构造函数，后调用对象成员的构造函数。对象成员的构造函数调用顺序为类定义中的声明顺序。</p>
+						<p>3、成员初始化列表</p>
+						<table border="1px" cellspacing="0px" cellpadding="6px"><tbody valign="top">
+							<tr>
+								<td>
+									<p>在<span class="code">(<span class="pa">形参列表</span>)</span>后插入<span class="code">:<span class="re">(</span><span class="pa">成员名</span><span class="re">|</span><span class="pa">基类名</span><span class="re">)</span>(<span class="pa">实参列表</span>)<span class="re">(</span>,<span class="re">(</span><span class="pa">成员名</span><span class="re">|</span><span class="pa">基类名</span><span class="re">)</span>(<span class="pa">实参列表</span>)<span class="re">)*</span></span>。</p>
+									<p>1、若没有调用基类的构造函数，自动调用基类的默认构造函数（若没有定义或没权限调用则出错）。</p>
+									<p>2、若没有调用对象成员的构造函数，自动调用默认构造函数（若没有定义或没权限调用则出错）。</p>
+									<p>3、不能初始化static数据成员。</p>
+									<p>4、const数据成员和引用数据成员必须用成员初始化列表初始化。</p>
+								</td>
+							</tr>
+						</tbody></table>
+						<p>4、禁止隐式调用复制构造函数、禁止隐式调用转换构造函数：在<span class="code"><span class="pa">函数名</span></span>前插入<span class="code">explicit </span>。</p>
+						<p>5、按形参列表分类</p>
+						<p>！！！若定义变量时用等号初始化且等号右侧是当前类类型，需要复制构造函数非explicit但不一定调用复制构造函数。</p>
+						<p>！！！1个构造函数可能同时是默认构造函数和复制构造函数。1个构造函数可能同时是默认构造函数和转换构造函数。</p>
+					</td>
+				</tr>
+				<tr>
+					<td>
+						<p>析构函数</p>
+					</td>
+				</tr>
+				<tr>
+					<td>
+						<p>其它函数成员</p>
+					</td>
+				</tr>
+			</tbody></table>
+			<p>4、</p>
+		</td>
+	</tr>
+
+
+
+
+</tbody></table>
+
+</div>
+</body>
+</html>

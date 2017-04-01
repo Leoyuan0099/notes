@@ -1,0 +1,38 @@
+body
+{
+ background-color:#DDDDDD;
+}
+
+table
+{
+ margin:8px 0px;
+}
+
+p
+{
+ margin:0px;
+ color:#000000;
+ font-size:14px;
+ font-family:"ÐÂËÎÌå";
+ line-height:18px;
+ word-break:break-all;
+ word-wrap:break-word;
+}
+
+span.re /* regular expression */
+{
+ color:#FF0000;
+}
+
+span.code
+{
+ border-style:solid;
+ border-width:1px;
+ border-color:#000000;
+ line-height:20px;
+}
+
+span.pa /* parameter */
+{
+ font-weight:bold;
+}
