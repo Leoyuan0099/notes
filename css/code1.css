@@ -5,8 +5,8 @@
 
 body
 {
- background-color:#DDDDDD;
- margin:0px;
+ background-color:#AFAFAF;
+ margin:0px 5px;
  height:100%;
 }
 
@@ -21,6 +21,18 @@ div
 table
 {
  margin:8px 0px;
+ border-collapse:seperate;
+}
+
+td
+{
+ transition:all 0.5s ease-in-out;
+}
+
+td:hover
+{
+   background-color:rgba(255,255,255,0.25);
+   box-shadow:0px 0px 16px rgb(0,0,255);
 }
 
 p
@@ -32,6 +44,12 @@ p
  line-height:18px;
  word-break:break-all;
  word-wrap:break-word;
+}
+
+p::selection
+{
+ color:rgb(255,255,255);
+ background-color:rgb(0,0,0);
 }
 
 span.re /* regular expression */
@@ -51,4 +69,10 @@ span.code
 span.pa /* parameter */
 {
  font-weight:bold;
+}
+
+span::selection
+{
+ color:rgb(255,255,255);
+ background-color:rgb(0,0,0);
 }
