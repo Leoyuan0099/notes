@@ -1,0 +1,1403 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>c++ rvalue reference</title>
+<style>
+	.scroll{overflow:auto;max-width:100%;max-height:80vh;display:inline-block;background-color:rgba(0,0,0,0.02);border:1px #808080 solid;}
+	.scroll::-webkit-scrollbar{-webkit-appearance:button;}
+	.scroll::-webkit-scrollbar:vertical{width:10.5pt;}
+	.scroll::-webkit-scrollbar:horizontal{height:10.5pt;}
+	.scroll::-webkit-scrollbar-thumb{background-color:rgb(193,193,193);}
+	.scroll::-webkit-scrollbar-track{background-color:rgb(241,241,241);}
+	/*https://stackoverflow.com/questions/22907777/make-scrollbar-visible-in-mobile-browsers*/
+	/*http://www.css88.com/book/css/webkit/visual/appearance.htm*/
+
+	*{font-family:/*Consolas,*/新宋体,monospace;font-size:10.5pt;word-break:break-all;word-wrap:break-word;background-color:rgba(255,255,255,0);}
+	.table{border-collapse:collapse;border-spacing:0px;border:0px;}
+	.table>tbody>tr{vertical-align:top;}
+	.table>tbody>tr>td{border:1px black solid;padding:1pt 4pt;}
+
+	.code{white-space:pre;tab-size:4;margin:0px;}
+	.paragraph_indented{text-indent:21pt;line-height:14pt;margin:0px;}
+	.paragraph_unindented{text-indent:0pt;line-height:14pt;margin:0px;}
+
+	.emphasize_bold{font-weight:bolder;}
+	.emphasize_yellow{background-color:yellow;}
+	.emphasize_red{background-color:red;}
+	.emphasize_border{border:1px black solid;margin:1pt;padding:1pt;}
+	.emphasize_strikethrough{text-decoration:line-through black solid;}
+	.super{vertical-align:super;font-size:smaller;}
+	.sub{vertical-align:sub;font-size:smaller;}
+
+	::selection{background:rgb(157,167,195);}
+	::selection:window-inactive{background:rgb(204,204,204);}
+
+
+	.terminal{font-weight:700;}
+
+	.keyword{color:rgb(0,0,255);}
+	.preprocessor_keyword{color:rgb(128,128,128);}
+
+	.operator_function{color:rgb(0,128,128);}
+	.member_operator_function{color:rgb(0,128,128);}
+	.new_delete_operator_function{color:rgb(0,0,255);}
+
+	.parameter{color:rgb(128,128,128);}
+	.macro{color:rgb(111,0,138);}
+	.typename{color:rgb(43,145,175);}
+
+	.enumerator{color:rgb(47,79,79);}
+	.string{color:rgb(163,21,21);}
+	.comment{color:rgb(0,128,0);}
+
+	.hyperlink>a:link, .hyperlink>a:hover, .hyperlink>a:active{color:rgb(5,99,193);}
+	.hyperlink>a:visited{color:rgb(149,79,114);}
+</style>
+</head>
+<body>
+
+<p class="paragraph_indented">c++11增加了移动语义，移动语义需要区分lvalue和rvalue，于是对rvalue和rvalue reference的关注逐渐多了起来。在这之前，c++有个很严重的问题，就是老是复制对象。这个问题被移动语义解决了。</p>
+<p class="paragraph_indented">最常见的例子，函数返回结果并存入变量（例如，split一个string、从查询结果中读取下一条记录）。</p>
+<p class="paragraph_indented">当类是值型类时，复制其中的资源就会浪费时间。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">class</span> <span class="typename">resource</span> {};
+<span class="keyword">class</span> <span class="typename">c1</span> { <span class="typename">resource</span>*p; <span class="comment">/* ... */</span> };
+<span class="typename">c1</span> f()
+{
+	<span class="typename">c1</span> a;
+	<span class="comment">//...</span>
+	<span class="keyword">return</span> a;<span class="comment">//复制构造函数，将a复制到存放返回值的temporary</span>
+}
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="typename">c1</span> a;
+	a <span class="member_operator_function">=</span> f();<span class="comment">//赋值运算符函数，将存放返回值的temporary复制到a</span>
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">但如果改成指针型类（比如指针、指针的简单封装），就会出现“被调函数返回了指针，主调函数要记得delete”“由于复制构造函数、赋值运算符函数不复制资源（照顾return语句），真的想复制资源就需要再搞个函数”的情况。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">class</span> <span class="typename">resource</span> {};
+<span class="keyword">class</span> <span class="typename">c1</span> { <span class="typename">resource</span>*p; <span class="comment">/* ... */</span> };
+<span class="typename">c1</span>*f()
+{
+	<span class="typename">c1</span>*a = new <span class="typename">c1</span>;
+	<span class="comment">//...</span>
+	<span class="keyword">return</span> a;
+}
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="typename">c1</span>*a;
+	a = f();
+	<span class="comment">//...</span>
+	<span class="keyword">delete</span> a;
+
+	a = f();
+	<span class="comment">//...</span>
+	<span class="keyword">delete</span> a;
+}</div></td></tr>
+<tr><td><div class="code"><span class="keyword">class</span> <span class="typename">resource</span> {};
+<span class="keyword">class</span> <span class="typename">c1</span> { <span class="typename">resource</span>*p; <span class="comment">/* ... */</span> };
+<span class="typename">c1</span> f()
+{
+	<span class="typename">c1</span> a;
+	<span class="comment">//...</span>
+	<span class="keyword">return</span> a;<span class="comment">//复制构造函数复制指针的值，不分配资源、复制内容</span>
+}
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	{
+		<span class="typename">c1</span> a;
+		a = f();<span class="comment">//赋值运算符函数复制指针的值，不分配资源、复制内容</span>
+		<span class="comment">//...</span>
+	}<span class="comment">//a离开作用域，自动调用析构函数回收资源</span>
+	{
+		<span class="typename">c1</span> a;
+		a = f();
+		<span class="comment">//...</span>
+		<span class="typename">c1</span> b;
+		b = a.copy();<span class="comment">//想让copy来分配资源、复制内容，返回a的副本。copy返回的temporary在full expression末尾自动调用析构函数回收资源，b里的指针变成悬挂指针。</span>
+		<span class="comment">//...</span>
+	}<span class="comment">//a离开作用域，自动调用析构函数回收资源</span>
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">然后你还不想用智能指针型类（比如shared_ptr），因为每份资源都要多占用内存，每次复制都要多消耗时间，修改引用计数时还要加锁解锁。</p>
+<p class="paragraph_indented">那怎么办呢，好难呀怎么解决呀。</p>
+<p class="paragraph_indented">其实根本不难，<span class="emphasize_yellow emphasize_bold">完全可以做到一点儿不浪费</span>。问题在于，写着写着就回到c语言了，就差把&换成*了。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">class</span> <span class="typename">resource</span> {};
+<span class="keyword">class</span> <span class="typename">c1</span> { <span class="typename">resource</span>*p; <span class="comment">/* ... */</span> };
+<span class="keyword">void</span> f(<span class="typename">c1</span>&a)<span class="comment">//写这个函数的人哭了</span>
+{
+	<span class="comment">//...</span>
+	<span class="comment">//（有的resource是内存）如果还没分配过内存或者已分配到的内存不够大，重新分配</span>
+	<span class="comment">//（有的resource是锁）</span>
+	<span class="comment">//（有的resource是设备）</span>
+	<span class="comment">//...</span>
+}
+<span class="keyword">int</span> main(<span class="keyword">void</span>)<span class="comment">//写这个函数的人笑了，才怪。本来是要表达“赋值”的意思，改变的是函数内部的状态。结果写出来是调用了一个函数，给人的感觉是改变了外部环境的状态。</span>
+{
+	<span class="typename">c1</span> a;
+	f(a);
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">所以要冷静一下，想清楚我们本来是要干嘛的：</p>
+<p class="paragraph_unindented">（1）所有的功能要齐全。既能复制资源，又能移动资源。</p>
+<p class="paragraph_unindented">（2）写起来好看。需要复制的时候，用return语句、赋值运算符表示你要复制；不需要复制的时候，还是用return语句、赋值运算符表示你不要复制。</p>
+<p class="paragraph_indented">我们再看一眼一开始的例子：</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">class</span> <span class="typename">resource</span> {};
+<span class="keyword">class</span> <span class="typename">c1</span> { <span class="typename">resource</span>*p; <span class="comment">/* ... */</span> };
+<span class="typename">c1</span> f()
+{
+	<span class="typename">c1</span> a;
+	<span class="comment">//...</span>
+	<span class="keyword">return</span> a;<span class="comment">//复制构造函数，将a复制到存放返回值的temporary</span>
+}
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="typename">c1</span> a;
+	a <span class="member_operator_function">=</span> f();<span class="comment">//赋值运算符函数，将存放返回值的temporary复制到a</span>
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">要的是这样：f的return语句让存放返回值的temporary指向资源，让f的a不指向资源，a析构时不会发生资源回收操作；main的赋值运算符函数让main的a指向资源，让temporary不指向资源，temporary析构时不会发生资源回收操作。1次资源分配在f中，1次资源回收在main结束时，0次资源复制。</p>
+<p class="paragraph_indented">移动语义表达的意思就是：将对象的内容或资源转移到另一个对象。</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">要实现移动语义，还不能破坏原来的老旧代码，需要解决这几个问题：</p>
+<p class="paragraph_unindented">（1）哪些值应该只能复制，哪些值应该可以移动。这是由应用场景决定的。</p>
+<p class="paragraph_unindented">（2）确定哪些值只能复制，哪些值可以移动。</p>
+<p class="paragraph_unindented">（3）只能复制的值在复制构造函数和赋值运算符函数中被复制，可以移动的就移动。</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">由（3）看出，不同类型的值进行了不同的操作，可以用函数重载做到。引入移动语义前，函数重载时是根据实参的type来选择函数的。引入移动语义后，函数重载是根据实参的type、实参是否可以移动来选择函数的。这里实参多了一个属性，就是下面要介绍的value category。</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_unindented">目录</p>
+<p class="paragraph_unindented">1 表达式的value category定义</p>
+<p class="paragraph_unindented">2 判定表达式的value category</p>
+<p class="paragraph_unindented">3 rvalue reference（右值引用）、move semantics（移动语义）</p>
+<p class="paragraph_unindented">4 universal reference（通用引用）、perfect forwarding（完美转发）</p>
+<p class="paragraph_unindented">5 non-static成员函数的ref-qualifier（引用限定符）</p>
+
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_unindented">1 表达式的value category定义</p>
+<p class="paragraph_indented">每个表达式正好属于lvalue、xvalue、prvalue中的一个，表达式的这个property称为它的value category。</p>
+
+<table class="table"><tbody>
+<tr>
+	<td><p class="paragraph_unindented">lvalue（locator value）</p></td>
+	<td style="max-width:50%;"><p class="paragraph_unindented">用于object和function。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">xvalue（"eXpiring" value）</p></td>
+	<td><p class="paragraph_unindented">一般是生存期即将结束的object（就是叫你把内容移走）。仅用于object。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">prvalue（"pure" rvalue）</p></td>
+	<td><p class="paragraph_unindented">temporary object、temporary object的subobject、和object无关的值（例：大部分literal）。</p></td>
+</tr>
+</tbody></table>
+
+<p class="paragraph_indented">glvalue（"generalized" lvalue）：lvalue和xvalue。</p>
+<p class="paragraph_indented">rvalue（value of expression）：xvalue和prvalue。</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">（这里再解释一下literal和object。literal翻译成“字面量”，就是c语言中的constant。object就是存放数据（“数据”和“代码”相对）的内存，不信看标准：An object is a region of storage. [Note: A function is not an object, regardless of whether or not it occupies storage in the way that objects do. —end note ]）</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">这篇文章只用到了lvalue和rvalue，并不区分rvalue中的xvalue和prvalue。</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">注意有些说法将lvalue和rvalue分别定义（理解）为能取地址和不能取地址，这是错误的，在下一节会看到例外（&class_name::non_static_member_function_name）。</p>
+
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_unindented">2 判定表达式的value category</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">lvalue、xvalue、prvalue在标准中是通过case-by-case的方式定义的，现在对c++14中相关内容进行整理。</p>
+
+<table class="table"><tbody>
+<tr>
+	<td style="min-width:20vw;"><p class="paragraph_unindented">literal</p></td>
+	<td><p class="paragraph_unindented">literal分为字符、字符串、布尔值、整数、浮点数、指针、用户定义的。用户定义的literal分为在字符、字符串、整数、浮点数后面加后缀4种，都是去调用literal operator，其实已经不是literal了。</p><p class="paragraph_unindented">字符串literal是lvalue，其它literal是prvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">lvalue-to-rvalue转换</p></td>
+	<td><p class="paragraph_unindented">non-function non-array<span class="emphasize_border">数据类型T</span>的glvalue可以转换成prvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">array-to-pointer转换</p></td>
+	<td><p class="paragraph_unindented"><span class="emphasize_border">array of N数据类型T</span>或<span class="emphasize_border">array of unknown bound of数据类型T</span>的lvalue、xvalue、prvalue可以转换成<span class="emphasize_border">pointer to数据类型T</span>的prvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">function-to-pointer转换</p></td>
+	<td><p class="paragraph_unindented">function<span class="emphasize_border">数据类型T</span>的lvalue可以转换成<span class="emphasize_border">pointer to数据类型T</span>的prvalue。不可能用于non-static成员函数，因为不能获取到non-static成员函数的lvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">expressions</p></td>
+	<td><p class="paragraph_unindented">若expression的type是reference to T，在任何进一步分析之前expression的type先变为T。（这条影响到typeid、noexcept、sizeof、decltype运算符，c++只有它们的操作数是unevaluated operand。）</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">expressions</p></td>
+	<td><p class="paragraph_unindented">若prvalue的type是cv T∧T是non-class non-array，在任何进一步分析之前expression的type先变为T。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">expressions</p></td>
+	<td>
+		<p class="paragraph_unindented">expression是xvalue的条件：</p>
+		<p class="paragraph_unindented">（1）函数调用，函数的返回值是rvalue reference to object type，或</p>
+		<p class="paragraph_unindented">（2）到rvalue reference to object type的数据类型转换，或</p>
+		<p class="paragraph_unindented">（3）E1.E2（E1->E2先变成(*E1).E2），E1是xvalue，E2指定non-static数据成员，数据成员的type是non-reference，或</p>
+		<p class="paragraph_unindented">（4）E1.*E2（E1->*E2先变成(*E1).*E2），E1是xvalue，E2是指向数据成员的指针。</p>
+		<p class="paragraph_unindented">（<span class="emphasize_yellow emphasize_bold">named rvalue reference to object是lvalue，unnamed rvalue reference to object是xvalue</span>，rvalue reference to function是lvalue。）</p>
+	</td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">this</p></td>
+	<td>
+		<p class="paragraph_unindented">在non-static函数成员和non-static函数成员模板的声明中，this是<span class="emphasize_border">pointer to cv-qualifier-seq 类X</span>的prvalue。（cv-qualifier-seq就是至少0个cv-qualifier的white space分隔的序列，cv-qualifier只有const和volatile。）</p>
+		<p class="paragraph_unindented">在non-static数据成员声明中，this是<span class="emphasize_border">pointer to 类X</span>的prvalue。</p>
+	</td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">parenthesis</p></td>
+	<td><p class="paragraph_unindented">( expression )的type和value都和expression的相同。</p><p class="paragraph_unindented">（c++和c不一样，不是所有地方都可以随便加括号的。）</p></td>
+</tr>
+</tbody></table>
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code">id-expression:
+	unqualified-id
+	qualified-id
+unqualified-id:
+	identifier（标识符）
+	operator-function-id（运算符函数）
+	conversion-function-id（转换函数）
+	literal-operator-id（字面量运算符函数）
+	~ class-name（析构函数）
+	~ decltype-specifier（析构函数，类名用<span class="emphasize_strikethrough">typeof</span> decltype运算符获得）
+	template-id（模板名<填好>、运算符函数<填好>、字面量运算符函数<填好>）
+qualified-id:
+	nested-name-specifier <span class="terminal">template</span><span class="sub">opt</span> unqualified-id
+nested-name-specifier:
+	::
+	type-name ::
+	namespace-name ::
+	decltype-specifier ::
+	nested-name-specifier identifier ::
+	nested-name-specifier <span class="terminal">template</span><span class="sub">opt</span> simple-template-id ::
+</td></tr></div>
+</tbody></table></div>
+<table class="table"><tbody>
+<tr>
+	<td style="min-width:20vw;"><p class="paragraph_unindented">id-expression</p></td>
+	<td><p class="paragraph_unindented">若entity是函数、变量、或数据成员，得到lvalue；否则得到prvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">qualified-id</p></td>
+	<td>
+		<p class="paragraph_unindented">nested-name-specifier指定了一个类：若成员是数据成员或static函数成员，得到lvalue；否则得到prvalue。</p>
+		<p class="paragraph_unindented">nested-name-specifier指定了一个命名空间：若成员是变量或函数，得到lvalue；否则得到prvalue。</p>
+		<p class="paragraph_unindented">nested-name-specifier指定了一个enumeration：qualified-id的unqualified-id当然是enumerator的name，得到prvalue。</p>
+	</td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">lambda expression</p></td>
+	<td><p class="paragraph_unindented">若this被capture到，任何对this的使用都会转换成对[closure的存储this的值的数据成员]的访问，这个转换保证你得到的是prvalue。（意思就是对this的capture-by-copy和capture-by-reference效果一样，都是by-copy。）</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">subscripting</p></td>
+	<td><p class="paragraph_unindented">E1[E2]等价于*((E1)+(E2))。但是，若其中一个操作数的type是array，若是lvalue则得到lvalue，若不是lvalue则得到xvalue。</p><p class="paragraph_unindented">（做实验的时候想得到array的xvalue的话，可以让函数返回array的rvalue reference。）</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">function call</p></td>
+	<td><p class="paragraph_unindented">若返回值的type是lvalue reference或function的rvalue reference，得到lvalue；若返回值的type是object的rvalue reference，得到xvalue；否则得到prvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">class member access</p></td>
+	<td>
+		<p class="paragraph_unindented">E1.E2（E1->E2先变成(*E1).E2）</p>
+		<p class="paragraph_unindented">若E2是reference，得到lvalue；否则</p>
+		<p class="paragraph_indented">若E2是static数据成员，得到lvalue；若E2是non-static数据成员，若E1是lvalue则得到lvalue，若E1不是lvalue则得到xvalue；若E2是static函数成员，得到lvalue；若E2是non-static函数成员，得到prvalue；若E2是enumerator成员，得到prvalue。</p>
+	</td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">increment and decrement</p></td>
+	<td><p class="paragraph_unindented">后缀自增和后缀自减得到prvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">dynamic cast</p></td>
+	<td><p class="paragraph_unindented">若数据类型T是pointer，得到prvalue；若数据类型T是lvalue reference，得到lvalue；若数据类型T是rvalue reference，得到xvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">type identification</p></td>
+	<td><p class="paragraph_unindented">得到lvalue。（static type是<span class="emphasize_border">const std::type_info</span>，dynamic type是<span class="emphasize_border">const std::type_info</span>或<span class="emphasize_border">const 由实现定义的、public继承std::type_info的、满足某些要求的类</span>。）</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">static cast</p></td>
+	<td><p class="paragraph_unindented">若数据类型T是lvalue reference或function的rvalue reference，得到lvalue；若数据类型T是object的rvalue reference，得到xvalue；否则得到prvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">reinterpret cast</p></td>
+	<td><p class="paragraph_unindented">若数据类型T是lvalue reference或function的rvalue reference，得到lvalue；若数据类型T是object的rvalue reference，得到xvalue；否则得到prvalue并进行lvalue-to-rvalue转换、array-to-pointer转换、function-to-pointer转换。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">const cast</p></td>
+	<td><p class="paragraph_unindented">若数据类型T是object的lvalue reference，得到lvalue；若数据类型T是object的rvalue reference，得到xvalue；否则得到prvalue并进行lvalue-to-rvalue转换、array-to-pointer转换、function-to-pointer转换。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">indirection</p></td>
+	<td><p class="paragraph_unindented">解引用运算符（间接运算符）的操作数是pointer to object或pointer to function，得到lvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">unary operators</p></td>
+	<td>
+		<p class="paragraph_unindented">&、+、-、!、~的结果都是prvalue。</p>
+		<p class="paragraph_unindented">&的操作数是lvalue或qualified-id。</p>
+		<p class="paragraph_unindented">若操作数是qualified-id∧指定了类C的non-static成员，成员的数据类型是T，得到<span class="emphasize_border">pointer to member of 类C of type 数据类型T</span>的prvalue；否则，得到<span class="emphasize_border">pointer to 数据类型T</span>的prvalue。</p>
+	</td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">increment and decrement</p></td>
+	<td><p class="paragraph_unindented">前缀自增和前缀自减得到lvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">noexcept operator</p></td>
+	<td><p class="paragraph_unindented">得到bool的prvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">explicit type conversion (cast notation)</p></td>
+	<td><p class="paragraph_unindented">若数据类型T是lvalue reference或function的rvalue reference，得到lvalue；若数据类型T是object的rvalue reference，得到xvalue；否则得到prvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">pointer-to-member operators</p></td>
+	<td><p class="paragraph_unindented">E1.*E2（E1->*E2先变成(*E1).*E2）</p><p class="paragraph_unindented">若E2是指向数据成员的指针，若E1是lvalue则得到lvalue，若E1不是lvalue则得到xvalue；若E2是指向函数成员的指针，得到prvalue。</p></td>
+</tr>
+<tr>
+	<td colspan="2"><p class="paragraph_unindented">multiplicative operators、additive operators、shift operators、relational operators、equality operators、bitwise AND operator、bitwise exclusive OR operator、bitwise inclusive OR operator的说明中没有出现lvalue、xvalue、prvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">conditional operator</p></td>
+	<td><p class="paragraph_unindented">（为了大家的健康，这个运算符的就不放了。）</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">assignment and compound assignment operators</p></td>
+	<td><p class="paragraph_unindented">得到lvalue。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">comma operator</p></td>
+	<td><p class="paragraph_unindented">type和value都和第2个操作数的相同。</p></td>
+</tr>
+</tbody></table>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">现在为了做实验方便，先定义几个变量或函数来<span class="emphasize_yellow emphasize_bold">得到lvalue和rvalue</span>。产生lvalue和rvalue有好几种方法，只需要选其中一种就可以继续了。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">class</span> <span class="typename">c1</span> {};
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="typename">c1</span> lvalue1;
+	<span class="typename">c1</span>&(*lvalue2)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="typename">c1</span>& {<span class="keyword">static</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="typename">c1</span> && (*lvalue3)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="typename">c1</span>&& {<span class="keyword">static</span> <span class="typename">c1</span> a; <span class="keyword">return</span> <span class="keyword">static_cast</span>&lt;<span class="typename">c1</span>&&>(a); };
+
+	<span class="keyword">const</span> <span class="typename">c1</span> const_lvalue1;
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue2)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> && (*const_lvalue3)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> <span class="keyword">static_cast</span>&lt;<span class="keyword">const</span> <span class="typename">c1</span>&&>(a); };
+
+	<span class="comment">//c1()</span>
+	<span class="comment">//static_cast&lt;c1&&>(lvalue1)</span>
+	<span class="typename">c1</span>(*rvalue2)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>) {<span class="keyword">static</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+
+	<span class="comment">//static_cast&lt;const c1&&>(c1())</span>
+	<span class="comment">//static_cast&lt;const c1&&>(lvalue1);</span>
+	<span class="keyword">const</span> <span class="typename">c1</span>(*const_rvalue1)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+}</div></td></tr>
+</tbody></table></div>
+
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_unindented">3 rvalue reference（右值引用）、move semantics（移动语义）</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">弄清楚lvalue和rvalue后，再来看lvalue reference和rvalue reference。</p>
+<p class="paragraph_indented">lvalue reference和rvalue reference都是初始化之后就不能修改的，唯一的操作就是初始化。三种情况分别是局部变量、实参传给形参、从函数返回。</p>
+<p class="paragraph_indented">lvalue reference：</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr>
+	<td><p class="paragraph_unindented">对应的c代码</p></td>
+	<td><p class="paragraph_unindented">c++代码</p></td>
+</tr>
+<tr><td><div class="code"><span class="keyword">struct</span> <span class="typename">c1</span> {};
+<span class="keyword">void</span> f(<span class="keyword">struct</span> <span class="typename">c1</span>*<span class="keyword">const</span> <span class="parameter">a</span>){}
+<span class="keyword">struct</span> <span class="typename">c1</span>*<span class="keyword">const</span> g(<span class="keyword">void</span>)
+{
+	<span class="keyword">static</span> <span class="keyword">struct</span> <span class="typename">c1</span> a;
+	<span class="keyword">return</span>&a;
+}
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="keyword">struct</span> <span class="typename">c1</span> a, *<span class="keyword">const</span> a1 = &a;
+	<span class="keyword">struct</span> <span class="typename">c1</span> a2; f(&a2);
+	<span class="keyword">struct</span> <span class="typename">c1</span>*<span class="keyword">const</span> a3 = g();
+}
+</div></td>
+<td><div class="code"><span class="keyword">class</span> <span class="typename">c1</span> {};
+<span class="keyword">void</span> f(<span class="typename">c1</span>&<span class="parameter">a</span>){}
+<span class="typename">c1</span>&g(<span class="keyword">void</span>)
+{
+	<span class="keyword">static</span> <span class="typename">c1</span> a;
+	<span class="keyword">return</span> a;
+}
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="typename">c1</span> a, &a1 = a;
+	<span class="typename">c1</span> a2; f(a2);
+	<span class="typename">c1</span>&a3 = g();
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">rvalue reference：</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr>
+	<td><p class="paragraph_unindented">对应的c代码</p></td>
+	<td><p class="paragraph_unindented">c++代码</p></td>
+</tr>
+<tr><td><div class="code"><span class="keyword">struct</span> <span class="typename">c1</span> {};
+<span class="keyword">void</span> f(<span class="keyword">struct</span> <span class="typename">c1</span>*<span class="keyword">const</span> <span class="parameter">a</span>){}
+<span class="keyword">struct</span> <span class="typename">c1</span>*<span class="keyword">const</span> g(<span class="keyword">void</span>)
+{
+	<span class="keyword">static</span> <span class="keyword">struct</span> <span class="typename">c1</span> a;
+	<span class="keyword">return</span>&a;
+}
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="keyword">struct</span> <span class="typename">c1</span> a, *<span class="keyword">const</span> a1 = &a;
+	<span class="keyword">struct</span> <span class="typename">c1</span> a2; f(&a2);
+	<span class="keyword">struct</span> <span class="typename">c1</span>*<span class="keyword">const</span> a3 = g();
+}</div></td>
+<td><div class="code"><span class="keyword">class</span> <span class="typename">c1</span> {};
+<span class="keyword">void</span> f(<span class="typename">c1</span>&&<span class="parameter">a</span>){}
+<span class="typename">c1</span>&&g(<span class="keyword">void</span>)
+{
+	<span class="keyword">static</span> <span class="typename">c1</span> a;
+	<span class="keyword">return</span> <span class="keyword">static_cast</span><<span class="typename">c1</span>&&>(a);
+}
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="typename">c1</span> a, &&a1 = <span class="keyword">static_cast</span><<span class="typename">c1</span>&&>(a);
+	<span class="typename">c1</span> a2; f(<span class="keyword">static_cast</span><<span class="typename">c1</span>&&>(a2));
+	<span class="typename">c1</span>&&a3 = g();
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">在实验的时候会遇到一些问题，比如不能将lvalue绑定到rvalue reference，这时只需要明确说一下要转换就行了。</p>
+<p class="paragraph_indented">两种reference对应的c代码是相同的，全是指针，但在c++中代码就不同，这样就对应着两种value category给变量增加了语义。</p>
+<p class="paragraph_indented">将表达式分成lvalue和rvalue，就是将表达式分成两类：提供的值的资源不能被移走的、提供的值的资源能被移走的。</p>
+<p class="paragraph_indented">将引用分成lvalue reference和rvalue reference，就是将函数分成两类：接收资源不能被移走的值的、接收资源能被移走的值的。</p>
+<p class="paragraph_indented">那么，利用函数重载，编译器就可以针对不同情况选择不同的函数，各取所需。由于函数重载是编译器选择函数，两种情况的代码风格就真的统一了。</p>
+<p class="paragraph_indented">下面演示<span class="emphasize_bold">复制构造函数</span>重载，同样的方法也可以用于<span class="emphasize_bold">赋值运算符函数</span>、<span class="emphasize_bold">别的函数</span>。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="preprocessor_keyword">#include</span><span class="string">&lt;iostream></span>
+<span class="keyword">using</span> <span class="keyword">namespace</span> std;
+<span class="keyword">class</span> <span class="typename">c1</span>
+{
+	<span class="keyword">int</span>*p;
+<span class="keyword">public</span>:
+	c1() :<span class="typename">c1</span>(0) {}
+	c1(<span class="keyword">int</span> <span class="parameter">a</span>) :p(<span class="keyword">new</span> <span class="keyword">int</span>(<span class="parameter">a</span>)) {}
+	~c1() { <span class="keyword">delete</span> p; }
+
+	c1(      <span class="typename">c1</span> &<span class="parameter">a</span>) :<span class="typename">c1</span>(*<span class="parameter">a</span>.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &<span class="parameter">a</span>) :<span class="typename">c1</span>(*<span class="parameter">a</span>.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&<span class="parameter">a</span>) :<span class="typename">c1</span>(*<span class="parameter">a</span>.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&<span class="parameter">a</span>) :<span class="typename">c1</span>(*<span class="parameter">a</span>.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+};
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	      <span class="typename">c1</span>&(*      lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span>&{ <span class="keyword">static</span>       <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	      <span class="typename">c1</span> (*      rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span> { <span class="keyword">static</span>       <span class="typename">c1</span> a; cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> (*const_rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span> { <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="typename">c1</span> a1(lvalue()),
+		a2(const_lvalue()),
+		a3(rvalue()),
+		a4(const_rvalue());
+}
+<img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFIAAABgCAIAAAAB/LJqAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKBSURBVHhe7ZtrcsMgDITTnixHz9Eqd8lWI4FNsMc1lr4fKSySYINfkyZfz+fzEZCYtr/L32Ck7UhMafv1epXWFhIJSv/NfLa9hxaIxDXbZM1ke9m1bs/rLPfto2odiF6SucViqPO+yzom/oq7TWNY6/Cu6ES0qVz9IKf5YZiu34Upr+SfQudsXN22bJHepTF8hZkuaX6dHGrBFNosKZuZtyTEue1J25FI25FI2/PQ/6AhkaD035xn2889Rn8dROLBxGSdZPsQz1LkkDpCeTjV5fRzW1XXovBpvKBTqrTWI2BoswJgHRO/7DYLYYyhLR14vRWPLhoA3Rbr8/ajE9GmYg9yTjaAXuWeOpr9dZiu34WDz22sUibQc/w7dM6Gtb1nxcxF9WodxnTyaXwVX2H8kqa9mSGg6wgcMnqVlXk1m6X0pGiXlJ5F3I+T7ttXI21HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm3Pg//AXBRQ+m+K6vT5bHsPUPCBvx5t6cJMtmXpZvXD3OT75Izv1K+42zSGteq3oIoOQFu/AqNc/SCn+U0Ypt0KVX3KK3kLOjTvlNevblu2yOzeCq1Ir9/k++Qcoh0MtfS/zFDc6tzuJ21HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm3Pg//AXBRQ+m+K6vTzbPu5x/B1oJj/BwgtXTjJtl/rAFLkkDrCTX6/zfhOfdltFsIYQ1s68HorHl00ALot1uf16AC09Sswij3IOdkAepV76mj66zBMuxWq+sHn9u8i7VlzGnTIBvC6tb1nxcxF9WodxnTyUXwr0us3+f22Lo42hlr6X2YoTrpvX4vH4wdqjCXMy22k0wAAAABJRU5ErkJggg==' /></div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">再确认一遍，四个变量初始化的风格真的统一了，不用定义新的函数帮忙了。</p>
+<p class="paragraph_indented">然而，在现实中并不需要把这四种情况都写上，而只要重载T&&、const T&。T的rvalue的实参匹配T&&的形参，是能移动的；其它实参匹配const T&的形参，是不能移动的。</p>
+
+<table class="table"><tbody>
+<tr>
+	<td><p class="paragraph_unindented">实参的限定和value category</p></td>
+	<td><p class="paragraph_unindented">&nbsp;</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">lvalue</p></td>
+	<td><p class="paragraph_unindented">lvalue不能移动，所以不能匹配T&&的形参。</p><p class="paragraph_unindented">lvalue能初始化const T&的变量，所以匹配const T&的形参。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">const lvalue</p></td>
+	<td><p class="paragraph_unindented">直接匹配const T&的形参。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">rvalue</p></td>
+	<td><p class="paragraph_unindented">直接匹配T&&的形参。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">const rvalue</p></td>
+	<td><p class="paragraph_unindented">有const，所以不能匹配T&&的形参。</p><p class="paragraph_unindented">const rvalue能初始化const T&的变量，所以匹配const T&的形参。</p></td>
+</tr>
+</tbody></table>
+
+<p class="paragraph_indented">reference的初始化需要分xvalue和prvalue，感兴趣的可以参考标准的8 Declarators/8.5 Initializers/8.5.3 References。把prvalue绑定到reference会导致编译器<span class="emphasize_bold emphasize_yellow">帮你创建</span>一个temporary，让temporary绑定到reference上。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">int</span> a1, *p_a1 = &a1;
+<span class="keyword">const</span> <span class="keyword">int</span>&b1=1, *p_b1 = &b1;
+<span class="keyword">int</span> a2, *p_a2 = &a2;
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+}
+<img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAekAAABFCAIAAADhBYnhAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAA8ESURBVHhe7Z09khy7Dcd1E99DqXJlzh1tla+iaMs3cDl2qvA5cOgDOFiHzpwodCLZAEGCIACS3TM9M/2BX01NoUGAn+j/67c7q/n0v+Cq/Pb3f2QrCK7H0es/tPu6hHYHV+bM2v3p00TZOWAaGeyQXu3K04yTDc7KVLtvKP5n3i+jkXrzAD+Rr58742ArxtqdTlhDAUFwAqbPLtYg8E5oISe/P4fuSGlKmtyWkJfUymRvsG/c2lXHF6cZnJXBczeVvXxXsFMZbvCD8EcaT5dQk2aeOfvgHsbaDYaC/EFwDmz950Lvk+Pa20QaMubROCO5k5CXYEvYye/BIejVLttkEOoyCI7Obc/dcGkhP78/h9FIPBt3QsrpxgR7Jp67gyvT024udWswvRgb+ThGI8E8elOhJoBs9R4cgql2k0HEyQYnY1z/Cunv2cAzb5PuRHvIAGWklqfOPriHeO4OrkzvuZtxa35wI6S75Hm3iR6Jh3cnIZs4wL0M9k88dwdXxtY/FPmYHCdwnc+hO/B0omSzxxrBzonn7uDKjJ+7qeDdsk93g0+OeArdwfJcDLnZrEpdBvsnnruDK9PTbih1We3qUjFoejTr5iSdypaXwSEYaDcdqIViguAE2PofFDk3kTGA4p9A3I3XZfz/jEFwbo5e/6Hd1yW0O7gyh9duWEC84hWveMXrWK947g6CIDgeod3X5cePH9kKgutx9PrX2v3r169sBWcntDu4MmfT7p8/f94g35CljGD/hHYHV+Zs2g2skm8S67/87Z+/++Nf4QUGO7fn+9unT5/fP/JVcCemdj/eP9NHVN++Z4/CBkxTRAgwOD33cBefeBqkP4eHAxNNo+M8tihRvXC/X7Fq3uXmaLaYymnR9X/jhn28v71mlx3t/vbt2xL5lqr9hz/99q9//wdeYLCCbwpV6dtbVON2qNrFLWb98WTQBkxTkFEbgRHe4cJd8XnZ7QRSx2HSnrIqeEDR7glLhuvthh2i9tY5iIWzuigrn7uds0u7/Q7a/b5RGa3C0e4vX74skW+p2v9NkHZ/+v2f4ZWDNmZJ6QdLaWtX3PWtABRswDQlMWhqMIf7/e3z0ptCitSqItmqouQEBiwfzkbaIdjTO4iFs7oo92s3Am7xPzvPxNfur1+/TuWbNFo+cZOHXjnIJ+3CdygypFfLaU8SdWM62xfcRFu7cm/JRhnILnTIR2AKsCnJxDxxcvWSgzE60z1cSIM26zR5CISRo3acHTpDXptgpsnCizwJno7uVk6AIpIB/+lJJFd3uNpQ/dwPA542rXpksLJVSlAx2s1bl4xFZ4fPFx9YDS/YZ1+7Pz4+pvItlZpeuWFO2gjaJXFfdOANVXZwL0a7uf54n8kp3wkKsB5poClPK8kdxxMiuLHTFcZKZ79WsMXOpLVpMrlbRgYzJiuncbIXkB3cBIYQdpvoIFttJCyy9dRVQzAZZHOYSQkEQ+1ee3YvYGPthlwLxQuaXYALrruGtIEJDt7d9h2a2XN3MXPx2gAvBQVF0BytiAczY3pAWHSEs0qVAmKkX6UIICp5eJh20IK7BAjk1TgB/Asr7lD27DoFqfOETZGAk1eq7F6iDAsaJs/dej/Vxr6ee39mIl/ghFz62Tcz0+7OHVndYNl9DDagrV2xz/JMYMuzZtkAL0Xmasrx1RjRQ3O4adSKyjI0TaKfTgq686LkoAU3K80oewczqR3Knl1nofYGlk1hZGvCTaxOujDDBYVzavdUuKGVflfpaje8k9HX7rINTakJeKMwwO5jsAGqdvkoxJnAhoNF705AJ8U/pNrAx4hp48OVzia6BcLy8G0K2H4K9JX8KphsmwUe6J/e6dINIIM7cXtu8wD2TXYDPLxGonp4/9lI2JSgckLtngo3AK0AKzh/LlBKNhuUIsBdeHvL/9/ZKS4sQgQDYcvKJbGvPTwqpnZ5z2l78ZLMYqmA3NJ6qg95e68XTtb0cNUNA5eZtmzA3yhWjWgmk+Q3k+NFMJhlLLMEakB3tQo5lzrkTkRvwgarpDClr8lu8BCM9HAnHA/YlKCyUrvRQnazo452T4WbYQXnFJJseCcG2i1LLHgJpnaPyxUqCtZotXu8apsSVI5e/1q7lwu3C+m1ZJl2g0cSBfcMTqTd9Nh54rLB9VmdHq7aTwmYs2n3PcIN4MO2IbdVps8LwTM4k3YHwVrOpt3BdQjtDq7M4bUbFhAEQRAci3juvi5w/NkKgutx9Prf+OfdwYEI7Q6uzNm0+7bPmUCWMoL9E9odXJmzaTewSr5JrNVf6Gyh4J3PouCHCeMzKttgarf8fcfwY2dtwDRFhACDo1MnuzCrkMJf+BlBmP1TRsd1rq9/3FuiTPLe+8ifR3MKeojbpv5Anq3dN25A97sdHO1e8neVgFRt+S/BsoLfB5y8WicVRnz9wmao2sX9TfcdGwobME1BRm0ERuiTnWdJZLXYyhmwKngA9LN8tgu5YW5eitzJj/f3795u34JdMo/eG+IRu3Q7j9Tubc4uHV33ux0c7f6yi+9e6C3+hk0JfNraFbe4vNsrNmCakhg0NbQnuzSLgFwOXlUhW5WTnMBW3DA3L8XvZtS5+Ld74Rh667JLVh47hE15JfvXbgTc9f9lGnzt3sF3L/RibtiUwKetXbmxZKN8Zhc6nvvdC16W6ZqBXHLUjrNDZ8hrE8w0WXiRJ8Fz1N3yBADdJhwclDpq/nV/QCb25sYzsD0MUngIhvtpSX002Z4rAX7lVR47hE15JZ527+/ssBk6d/bN1+4dfPdCL4bXH9yL0W6uD95kcsp3ggKsRxpoyqNK1c3xhAhu7IrI6tZKarEzaW2aDDiaKbiDmqycxsleQHbYSUJwGbM2orN2RhZ3nxGjVNjp9eCnAGkXeRqIiaSQZgICMVoBEmwPMsROxqS8FKPduIB2fnVnRaPYC24Ho9kdu3aAnV4PfsqIjbUbci0UL2hmCRfNqjO9mNUrDHrMnruLWctTBXgpWOKC5mhFPJgZ04NG9uxVCgZIv+jHTiZ5xDDeoO4SIJBX4wSUXyjZSbaeMlc5brGXzK06vR78lELqv0xFR8J1M7iG1twuDZPYI23CnYwNexlau/d8dh73/sxEvsAJufSzb2am3XbDiF7M6hUGPdrahU0uG6v2O9+yNsBLkbmacnY1RvTQPVmbZWiaRD+dFHTnRXmDulkQyNK1dCaJ1gPdpAs5bjOHydyq0+3BTamIubiRYvAKOd3g1il6T9ghTMpL2VK7Exj+sLOz3Pi7Smil31W62g3vZPS1u0zT7lemF7N6hUEPVbu8zWK/YbfBoncnoJPin1Bt4DPENI5lb4Porolugag8fNuPyG6BvpJfBZNts8AD/dM7XboBgJ0kBufJ1W0Cpx03482NYafbg5fy/b145NzczgnZVObiAGF5WQXlsUPYlFeitXuHZzfE0e6pcAPQCrCC8+cCpWSzQSkCnOXsuxdsDG5eZd0yAwe3dsXe1lIulgrILa2nPagbv3tBeGTPWBWZtmzAXx05iBzNZJL8ZnK8CAazDGaWQA3orlYh5+YOuUsgu2owL0aMxbbJyw7uGOFEr4duSgH9cupqe1cB3TbDCE9vCJvySkz9A3Wv8kRffHYjHO2eCjfDCs4pJNnwTgy0u0w9eBle7R6UqKjnA3uuZGZ6CjbllRy9/rV2LxduF9JryTLtBo9kRwd8Yk6k3fR4FGXzNHC/rU4PT8FPeSFn0+57hBvAh21DbqtM//scPIMzaXcQrOVs2h1ch9Du4MocXrthAUEQBMGxiOfu6wLHn60guB5Hr/+Nf94dHIjQ7uDKnE27b/ucCWQpI9g/od3BlTmbdgOr5JvEWv2FzmMUvH5KPj4LtgmmdnmHRx/zagOmKfLchn8Jgh8TFc1O1mis1PbCuiifXMZ53P8Zqrr4siS/X7FqTuFN2GYqJ0bX/40b1v1uhEfjaPeSv6sEpGrLfwmWFXxj+E978SZ/4V16HlTtYumy/ngbbAOmKciojcCI6XcvDMeSnzpd9QnUVcEDinZPWDacX+p2iNpbZ3MWzuqirHzuds4u7fZ777sRHo2j3V928d0LA5xNDG6grV1x13vq6AVMUxKDpob2WHXWeCwpUqvKY6takhMYsHY4GW+HYE9vcxbO6qLcr90IuF/0LOlr9w6+e4H2JKE2Bqpzk9vt8rS1K0uTbJSB7ELHa797oTNWBjzUUe04O9RkmmsTzDRZeJHH45F1t3ICYsKL/n190WCnURfKQzDsSWPlOGWrlKBitJu3Lhl3fzfCo/G1ewffvcDwhhKYEPW4CUa7eV95z8kp3wkKsB5poKlPrsYTIrixKyXLHavQFEWnT5qM7AYxXSEmK6dxsheQHdwERlkumibRQbWqUofLNre2QyIHyk5MSiAYavfas3sBG2s35FooXtDsAlyIAhWkDUw0wZ3oYDWz5+5i5i23AV4KCoqgOSwRD2bG9KAhv2xVkXAphxGtdjLJI5JVVwl3CRDIq3EC+BdW3KHs2XUKUueJ2oo+uSwEfOxSth2LkGFBw+S5W++n2tjXc+/PTOQLnJBLP/tmZtqN94FTXNUNVg7uhAY30tZu3edmo+GssobYAC9F5mrKudcY0UP33iC/NxbTeEQ/NjKB7rwob1A3CwIb7Xa6TXCHsmfXWai9gZVbvRFqa8ZLbDNNSiA4p3ZPhRta6XeVrnbDOxl97S7b0JSagDcKA5K1u607PKp2+SjEmcCmg0XvTkAnxT+o2sBHiWkcy94GzvLGYiCKXbIfztZAJ8mvgsm2WeCB/umdLt0AMrgTt+c2D2Af74YXlbxq2dXT2RybElROqN1T4QagFWAF588FSslmg1IEuAuz717AIkTcf56/mxWswNQu7zmVKF6SWSwVkFtaT/UhW373gjdWBiqqUSyEHM1kkvxmcrwIxrLMXTdZq757gTsRvQkbrJLC8LrGpc5DMNLDnZQxEZsSVFZqN1rIbnbU0e6pcDOs4JxCkg3vxEC7ZYkFL8HU7nG5QkXBGq12j1dtU4LK0etfa/dy4XYhvZYs027wSKLgnsGJtJseO09cNrg+q9PDVfspAXM27b5HuAF82Dbktsr0eSF4BmfS7iBYy9m0O7gOod3BlTm8dsMCgiAIgiPx48f/AeVl1QNx8Gv6AAAAAElFTkSuQmCC' /></div></td></tr>
+<tr><td><div class="code"><span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="keyword">int</span> a1, *p_a1 = &a1;
+	<span class="keyword">const</span> <span class="keyword">int</span>&b1 = 1, *p_b1 = &b1;
+	<span class="keyword">int</span> a2, *p_a2 = &a2;
+}
+<img src='data:image/png;base64,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' /></div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">这就扯出另一个话题，绑定到reference的temporary能活多久。这里只简单列出所有规则。</p>
+<p class="paragraph_indented">创建temporary的情况有（简略）：prvalue绑定到reference、return prvalue、conversion产生prvalue、抛出异常、某些初始化。</p>
+<p class="paragraph_indented">temporary在包含它的full expression结束时或由于异常离开full expression时析构，除了下面这些例外情况：</p>
+
+<table class="table"><tbody>
+<tr>
+	<td colspan="2"><p class="paragraph_unindented">调用默认构造函数初始化数组每个元素，默认构造函数有默认实参</p></td>
+	<td><p class="paragraph_unindented">上一个元素的默认实参在下一个元素构造前析构。</p></td>
+</tr>
+<tr>
+	<td colspan="2"><p class="paragraph_unindented">temporary绑定到reference</p></td>
+	<td><p class="paragraph_unindented">temporary持续时间和reference的lifetime一样长，除了下面这些例外情况：</p></td>
+</tr>
+<tr>
+	<td rowspan="4"><p class="paragraph_unindented"></p></td>
+	<td><p class="paragraph_unindented">成员初始化列表，reference成员</p></td>
+	<td><p class="paragraph_unindented">构造函数结束时析构。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">function call，reference形参</p></td>
+	<td><p class="paragraph_unindented">在包含function call的full expression结束时析构。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">return语句，reference返回值</p></td>
+	<td><p class="paragraph_unindented">return语句的full expression结束时析构。</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">new-initializer，reference形参</p></td>
+	<td><p class="paragraph_unindented">在包含new-initializer的full expression结束时析构。</p></td>
+</tr>
+</tbody></table>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">现在看一下与复制有关的问题已经解决几个了：</p>
+<p class="paragraph_unindented">（1）实参传给形参。若实参是rvalue，会匹配移动构造函数。</p>
+<p class="paragraph_unindented">（2）赋值运算符。若右操作数是rvalue，会匹配移动赋值运算符函数。</p>
+<p class="paragraph_unindented">（3）函数返回值。</p>
+<p class="paragraph_unindented">（4）就是要将lvalue中的资源移走，怎样把lvalue当rvalue用。</p>
+<p class="paragraph_unindented">（5）在lvalue对象和rvalue对象上分别调用同名函数成员，分别匹配到不同函数成员。（例如rvalue对象匹配的函数成员会把对象中的资源移动到返回值temporary中，而lvalue对象是复制。rvalue对象匹配的函数成员返回rvalue，lvalue对象匹配的函数成员返回lvalue。）关键是*this的value category不同，类似于（1）。</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">（3）的问题在于，return语句会直接退出函数，所以即使return的是lvalue也应该可以移走里面的资源。（3）和（4）当然可以直接使用static_cast&lt;T&&>()“取引用”，但是（3）的情况已经被标准考虑到了，<span class="emphasize_bold emphasize_yellow">写static_cast&lt;T&&>()反而不如不写，因为写了就会抑制copy elision</span>。</p>
+<p class="paragraph_indented">即使复制构造函数或移动构造函数或析构函数有side effect，也可以被省略掉。这个省略函数调用的操作叫copy elision。</p>
+
+<table class="table"><tbody>
+<tr>
+	<td>
+		<p class="paragraph_unindented">在return语句中。</p>
+		<p class="paragraph_unindented">函数返回值的type是class。</p>
+		<p class="paragraph_unindented">expression是non-volatile automatic object（且不是函数形参或catch语句的形参）的name。</p>
+		<p class="paragraph_unindented">object的type去掉cv-qualifier和函数返回值的type去掉cv-qualifier相同。</p>
+	</td>
+	<td><p class="paragraph_unindented">将automatic object创建在返回值的位置。</p></td>
+</tr>
+<tr>
+	<td>
+		<p class="paragraph_unindented">在throw表达式中。</p>
+		<p class="paragraph_unindented">操作数是non-volatile automatic object（且不是函数形参或catch语句的形参）的name。</p>
+		<p class="paragraph_unindented">object的作用域不超出直接包含它的try块。</p>
+	</td>
+	<td><p class="paragraph_unindented">将automatic object创建在exception object的位置。</p></td>
+</tr>
+<tr>
+	<td>
+		<p class="paragraph_unindented">temporary没绑定到reference。</p>
+		<p class="paragraph_unindented">temporary的type是class。</p>
+		<p class="paragraph_unindented">temporary将要被复制或移动到某个class object。</p>
+		<p class="paragraph_unindented">temporary的type去掉cv-qualifier和object的type去掉cv-qualifier相同。</p>
+	</td>
+	<td><p class="paragraph_unindented">将temporary创建在目标的位置。</p></td>
+</tr>
+<tr>
+	<td>
+		<p class="paragraph_unindented">异常处理器的异常声明定义的object（catch语句的形参）的type去掉cv-qualifier和exception object去掉cv-qualifier相同。</p>
+		<p class="paragraph_unindented">（<span class="emphasize_red">exception object是lvalue temporary。</span>这里省略的只有复制，不可能是移动。）</p>
+	</td>
+	<td><p class="paragraph_unindented">将异常声明当做exception object的alias，如果程序除了构造函数和析构函数没调用之外不会有改变。</p></td>
+</tr>
+</tbody></table>
+
+<p class="paragraph_indented">&nbsp;</p>
+<div class="scroll"><table class="table"><tbody>
+<tr>
+	<td><p class="paragraph_unindented">错误</p></td>
+	<td><p class="paragraph_unindented">正确</p></td>
+</tr>
+<tr><td><div class="code"><span class="typename">c1</span> f(<span class="keyword">void</span>)
+{
+	<span class="typename">c1</span> a;
+	<span class="comment">//...</span>
+	<span class="keyword">return</span> <span class="keyword">static_cast</span><<span class="typename">c1</span>&&>(a);<span class="comment">//把a转成rvalue匹配移动构造函数，结果是没有copy elision</span>
+}</div></td>
+<td><div class="code"><span class="typename">c1</span> f(<span class="keyword">void</span>)
+{
+	<span class="typename">c1</span> a;
+	<span class="comment">//...</span>
+	<span class="keyword">return</span> a;
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">还有一条规则和copy elision有关：two-stage overload resolution。在一些情况下，<span class="emphasize_bold emphasize_yellow">优先匹配移动构造函数</span>。虽然会被copy elision优化掉，但还是要求accessible（accessible指的是protected、private、friend这种东西）。</p>
+
+<table class="table"><tbody><tr>
+<td>
+	<p class="paragraph_unindented">copy elision的条件满足且不是异常声明。</p>
+	<p class="paragraph_unindented">被复制的object是lvalue，或return中的expression是id-expression，id-expression是[直接包含着的函数或lambda表达式的、在形参列表或函数体中声明的automatic object的name]。</p>
+</td>
+<td>
+	<p class="paragraph_unindented">将object当做rvalue进行一次overload resolution。若overload resolution失败或没进行或选中的构造函数的第一个参数不是object的type的rvalue reference，将object当做lvalue进行一次overload resolution。</p>
+</td>
+</tr></tbody></table>
+
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">4 universal reference（通用引用）、perfect forwarding（完美转发）</p>
+
+<p class="paragraph_indented">讲到这里就很容易有这样的看法：形参有&就会匹配lvalue，形参有&&就会匹配rvalue。然而在一些情况下&&是同时可以匹配lvalue和rvalue的，这时它是universal reference，应当和rvalue reference区分开。</p>
+<p class="paragraph_indented">lvalue reference只能匹配lvalue，rvalue reference只能匹配rvalue。universal reference能匹配lvalue和rvalue，用lvalue初始化就会变成lvalue reference（rvalue reference的appearance，lvalue reference的meaning），用rvalue初始化就会变成rvalue reference。</p>
+<p class="paragraph_indented">若T是将要推导出的数据类型（而不是已知的数据类型或将要推导出的数据类型的组成部分），则T&&是universal reference。</p>
+
+<div class="scroll"><table class="table"><tbody><tr>
+	<td><p class="paragraph_unindented">T是“将要推导出的数据类型”</p></td>
+	<td><p class="paragraph_unindented">T是“已知的数据类型”</p></td>
+	<td><p class="paragraph_unindented">T是“已知的数据类型”</p></td>
+	<td><p class="paragraph_unindented">T是“将要推导出的数据类型的组成部分”</p></td>
+	<td><p class="paragraph_unindented">T是“将要推导出的数据类型的组成部分”</p></td>
+</tr><tr>
+<td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">void</span> f(<span class="typename">T</span>&&<span class="parameter">a</span>) {}<span class="comment">//universal reference</span>
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="keyword">int</span> a;
+	f(a);
+}</div></td>
+<td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">void</span> f(<span class="typename">T</span>&&<span class="parameter">a</span>) {}<span class="comment">//rvalue reference</span>
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="keyword">int</span> a;
+	f<<span class="keyword">int</span>>(a);<span class="comment">//无法将参数 1 从“int”</span>
+	          <span class="comment">//转换为         “int &&”</span>
+}</div></td>
+<td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">class</span> <span class="typename">c1</span>
+{
+<span class="keyword">public</span>:
+	<span class="keyword">void</span> f(<span class="typename">T</span>&&<span class="parameter">a</span>);<span class="comment">//rvalue reference</span>
+};
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">void</span> <span class="typename">c1</span><<span class="typename">T</span>>::f(<span class="typename">T</span>&&<span class="parameter">a</span>) {}
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="typename">c1</span><<span class="keyword">int</span>>a;
+	<span class="keyword">int</span> b;
+	a.f(b);<span class="comment">//无法将参数 1 从“int”</span>
+	       <span class="comment">//转换为         “int &&”</span>
+}</div></td>
+<td><div class="code"><span class="preprocessor_keyword">#include</span><span class="string">&lt;vector></span>
+<span class="keyword">using</span> <span class="keyword">namespace</span> std;
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+void f(<span class="typename">vector</span><<span class="typename">T</span>>&&<span class="parameter">a</span>){}<span class="comment">//rvalue reference</span>
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="typename">vector</span><<span class="keyword">int</span>>a;
+	f(a);<span class="comment">//无法将参数 1 从“std::vector<int,std::allocator<_Ty>>”</span>
+	     <span class="comment">//转换为         “std::vector<int,std::allocator<_Ty>> &&”</span>
+}</div></td>
+<td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">void</span> f(<span class="keyword">const</span> <span class="typename">T</span>&&<span class="parameter">a</span>){}<span class="comment">//rvalue reference</span>
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	<span class="keyword">const</span> <span class="keyword">int</span> a=1;
+	f(a);<span class="comment">//无法将参数 1 从“const int”</span>
+	     <span class="comment">//转换为         “const int &&”</span>
+}</div></td>
+</tr></tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">既然universal reference能匹配lvalue和rvalue，现在就来用它做一个不管接收到的是哪种value都转成rvalue的函数。之前有好几处要把lvalue转成rvalue，是这么干的：static_cast&lt;int&&>(a)，这里的int&&是rvalue reference。这个写着太麻烦，要是能写成std::move(a)就好了（move要能把lvalue和rvalue转成rvalue，把const lvalue和const rvalue转成const rvalue），这样写更expressive。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="preprocessor_keyword">#include</span><span class="string">&lt;iostream></span>
+<span class="keyword">class</span> <span class="typename">c1</span>
+{
+	<span class="keyword">int</span>*p;
+<span class="keyword">public</span>:
+	c1() :<span class="typename">c1</span>(0) {}
+	c1(<span class="keyword">int</span> <span class="parameter">a</span>) :p(<span class="keyword">new</span> <span class="keyword">int</span>(<span class="parameter">a</span>)) {}
+	~c1() { <span class="keyword">delete</span> p; }
+
+	c1(      <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+};
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="typename">T</span>&&move(<span class="typename">T</span>&&<span class="parameter">a</span>)
+{
+	<span class="keyword">return</span> <span class="keyword">static_cast</span><<span class="typename">T</span>&&>(<span class="parameter">a</span>);
+}
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	      <span class="typename">c1</span>&(*      lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span>&{ <span class="keyword">static</span>       <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	      <span class="typename">c1</span> (*      rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span> { <span class="keyword">static</span>       <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> (*const_rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span> { <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+
+	<span class="typename">c1</span> a1(move(lvalue())),
+		a2(move(const_lvalue())),
+		a3(move(rvalue())),
+		a4(move(const_rvalue()));
+}
+<img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFIAAABgCAIAAAAB/LJqAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKBSURBVHhe7ZtrcsMgDITTnixHz9Eqd8lWI4FNsMc1lr4fKSySYINfkyZfz+fzEZCYtr/L32Ck7UhMafv1epXWFhIJSv/NfLa9hxaIxDXbZM1ke9m1bs/rLPfto2odiF6SucViqPO+yzom/oq7TWNY6/Cu6ES0qVz9IKf5YZiu34Upr+SfQudsXN22bJHepTF8hZkuaX6dHGrBFNosKZuZtyTEue1J25FI25FI2/PQ/6AhkaD035xn2889Rn8dROLBxGSdZPsQz1LkkDpCeTjV5fRzW1XXovBpvKBTqrTWI2BoswJgHRO/7DYLYYyhLR14vRWPLhoA3Rbr8/ajE9GmYg9yTjaAXuWeOpr9dZiu34WDz22sUibQc/w7dM6Gtb1nxcxF9WodxnTyaXwVX2H8kqa9mSGg6wgcMnqVlXk1m6X0pGiXlJ5F3I+T7ttXI21HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm3Pg//AXBRQ+m+K6vT5bHsPUPCBvx5t6cJMtmXpZvXD3OT75Izv1K+42zSGteq3oIoOQFu/AqNc/SCn+U0Ypt0KVX3KK3kLOjTvlNevblu2yOzeCq1Ir9/k++Qcoh0MtfS/zFDc6tzuJ21HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm1HIm3Pg//AXBRQ+m+K6vTzbPu5x/B1oJj/BwgtXTjJtl/rAFLkkDrCTX6/zfhOfdltFsIYQ1s68HorHl00ALot1uf16AC09Sswij3IOdkAepV76mj66zBMuxWq+sHn9u8i7VlzGnTIBvC6tb1nxcxF9WodxnTyUXwr0us3+f22Lo42hlr6X2YoTrpvX4vH4wdqjCXMy22k0wAAAABJRU5ErkJggg==' /></div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">然而从结果看，move并没有把lvalue变成rvalue。鼠标移到第1个move上，vs提示是c1&move<c1&>(c1&a)。其实刚才已经说了，T&&是universal reference，用lvalue初始化就会变成lvalue reference，move的形参和返回值的T&&就都变成c1&了，要让move的返回值是c1&&，还需要再了解一些规则。</p>
+<p class="paragraph_unindented">（1）若T1&&被T2的lvalue初始化，T1变成T2&；若T1&&被T2的rvalue初始化，T1变成T2。</p>
+<p class="paragraph_indented">所以move接到lvalue和rvalue时分别变成<span class="emphasize_bold emphasize_yellow">c1&</span> &&move<<span class="emphasize_bold emphasize_yellow">c1&</span>>(<span class="emphasize_bold emphasize_yellow">c1&</span> &&a)和<span class="emphasize_bold emphasize_yellow">c1</span>&&move<<span class="emphasize_bold emphasize_yellow">c1</span>>(<span class="emphasize_bold emphasize_yellow">c1</span>&&a)。等一下，我好像看到了reference to reference。</p>
+<p class="paragraph_unindented">（2）虽然不允许直接写reference to reference，但通过间接方式（typedef、decltype等）可以产生reference to reference，自动使用引用折叠规则，变成一层reference：<span class="emphasize_border">&& &&</span>变成&&，<span class="emphasize_border">& &</span>、<span class="emphasize_border">& &&</span>、<span class="emphasize_border">&& &</span>变成&。你可以这样理解：既然形参是引用就是为了访问已有的object而不是再多创建一个object，所以折叠完必须还是引用；lvalue reference表示不能移动，只要有一个环节不让你移动你就不能移动，所以只要出现lvalue reference结果就是lvalue reference。</p>
+<p class="paragraph_indented">所以move接到lvalue和rvalue时分别变成<span class="emphasize_bold emphasize_yellow">c1&</span>move<<span class="emphasize_bold emphasize_yellow">c1&</span>>(<span class="emphasize_bold emphasize_yellow">c1&</span>a)和<span class="emphasize_bold emphasize_yellow">c1</span>&&move<<span class="emphasize_bold emphasize_yellow">c1</span>>(<span class="emphasize_bold emphasize_yellow">c1</span>&&a)。如果在返回值那里把T的&去掉，再加上&&，两种情况返回值就都是c1&&。用template来去掉&。</p>
+<p class="paragraph_indented"></p>
+<p class="paragraph_indented"></p>
+<p class="paragraph_indented"></p>
+<p class="paragraph_indented"></p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="preprocessor_keyword">#include</span><span class="string">&lt;iostream></span>
+<span class="keyword">class</span> <span class="typename">c1</span>
+{
+	<span class="keyword">int</span>*p;
+<span class="keyword">public</span>:
+	c1() :<span class="typename">c1</span>(0) {}
+	c1(<span class="keyword">int</span> <span class="parameter">a</span>) :p(<span class="keyword">new</span> <span class="keyword">int</span>(<span class="parameter">a</span>)) {}
+	~c1() { <span class="keyword">delete</span> p; }
+
+	c1(      <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+};
+
+<span class="keyword">template</span><<span class="keyword">typename</span> T><span class="keyword">struct</span> <span class="typename">remove_reference</span>    {<span class="keyword">typedef</span> <span class="typename">T</span> <span class="typename">type</span>;};
+
+<span class="keyword">template</span><<span class="keyword">typename</span> T><span class="keyword">struct</span> <span class="typename">remove_reference</span><<span class="typename">T</span>&>{<span class="keyword">typedef</span> <span class="typename">T</span> <span class="typename">type</span>;};
+
+<span class="keyword">template</span><<span class="keyword">typename</span> T>
+<span class="emphasize_yellow"><span class="keyword">typename</span> <span class="typename">remove_reference</span><<span class="typename">T</span>>::<span class="typename">type</span></span>&&move(<span class="typename">T</span>&&<span class="parameter">a</span>)
+{
+	return <span class="keyword">static_cast</span><<span class="emphasize_yellow"><span class="keyword">typename</span> <span class="typename">remove_reference</span><<span class="typename">T</span>>::<span class="typename">type</span></span>&&>(<span class="parameter">a</span>);
+}
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	      <span class="typename">c1</span>&(*      lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span>&{ <span class="keyword">static</span>       <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	      <span class="typename">c1</span> (*      rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span> { <span class="keyword">static</span>       <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> (*const_rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span> { <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+
+	<span class="typename">c1</span> a1(move(lvalue())),
+		a2(move(const_lvalue())),
+		a3(move(rvalue())),
+		a4(move(const_rvalue()));
+}
+<img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFIAAABgCAIAAAAB/LJqAAAABGdBTUEAALGPC/xhBQAAAAlwSFlzAAAOwwAADsMBx2+oZAAAAm9JREFUeF7tm/2SgjAMxL17Mh/dR7volpjJNoiFYeglvz+w3YY0CxQcP37u9/stITlt/7bXZJTtTExp+/F4tNaCKKD1F5pK+ny22QMU3JvtaKQLM9mW0l31wzyf20flOhBbknvEYqgrChv1K55tNYZa7SHoYgPQtlvglKtf5Gr+Ixpm3Qpdfco7eYQ6dEeK9avbllPkzt4KUSTrM93SuE4eUjsYivT3nqn4V2t7O2U7E2U7E2V7HvgBLgpo/YWmkn6ebZ57DM4Dxb0/ESJdOMk21zqAJDkkj9DenNp09n1bV7ei8G28YHfpEtUjYKgrChv159nWRBjT0EgHrEfx6KIB0I1Yn5exAWjbLXCKv8h1sgFslXvyWLbn0TDrVujqB6/tV5F+1ZyGOtQGYN3b3lOx7ovs3Twas5Gv4qNI1sdvadabGwI2j6BDTu+yMq+Fh0RBG0OR/t4zFSc9t69G2c5E2c5E2c5E2c5E2c5E2c5E2c5E2c5E2c5E2c5E2Z4H/sBcFND6C00lfT7b7AGK+z5AiHRhJttSuqt+mPo9+WVQY6jVHoIuNgBtuwVOufpFruY/omHWrdDVp7yTR6hDd6RYv7ptOUXu7K0QRbJevyfPxL9a29sp25ko25ko25ko25ko25ko25ko25ko25ko25ko25ko2/PAH5iLAlp/oamkn2eb5x6D80Bx3wcIkS6cZJtrHUCSHJJHqP9vv9CuNlgHrEfx6KIB0I1Yn5exAWjbLXCKv8h1sgFslXvyWLbn0TDrVujqB6/tV5F+1ZyGOtQGYN3b3lOx7ovs3Twas5Gv4qNI1uv/25k46bl9LW63P+gGaswbeX2JAAAAAElFTkSuQmCC' /></div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">现在又出现两个新问题：</p>
+<p class="paragraph_unindented">（1）T&&已经被征用为universal reference了，那我想写一个只匹配rvalue的模板就不行了。</p>
+<p class="paragraph_unindented">（2）为什么要有universal reference？</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">（1）可以用type_traits获取类型信息解决。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="preprocessor_keyword">#include</span><span class="string">&lt;iostream></span>
+<span class="preprocessor_keyword">#include</span><span class="string">&lt;type_traits></span>
+<span class="keyword">class</span> <span class="typename">c1</span>
+{
+	<span class="keyword">int</span>*p;
+<span class="keyword">public</span>:
+	c1() :<span class="typename">c1</span>(0) {}
+	c1(<span class="keyword">int</span> <span class="parameter">a</span>) :p(<span class="keyword">new</span> <span class="keyword">int</span>(<span class="parameter">a</span>)) {}
+	~c1() { <span class="keyword">delete</span> p; }
+
+	c1(      <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+};
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">void</span> f(      <span class="typename">T</span> &<span class="parameter">a</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      &"</span>  <span class="member_operator_function"><<</span> std::endl; }
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">void</span> f(<span class="keyword">const</span> <span class="typename">T</span> &<span class="parameter">a</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const &"</span>  <span class="member_operator_function"><<</span> std::endl; }
+<span class="keyword">template</span><
+	<span class="keyword">typename</span> <span class="typename">T</span>,
+	<span class="keyword">typename</span> = <span class="keyword">typename</span> std::<span class="typename">enable_if</span>&lt;!std::<span class="emphasize_yellow"><span class="typename">is_lvalue_reference</span><<span class="typename">T</span>&&></span>::value>::<span class="typename">type</span>
+><span class="comment">//https://stackoverflow.com/questions/7863603/how-to-make-template-rvalue-reference-parameter-only-bind-to-rvalue-reference</span>
+<span class="keyword">void</span> f(      <span class="typename">T</span>&&<span class="parameter">a</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      &&"</span> <span class="member_operator_function"><<</span> std::endl; }
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">void</span> f(<span class="keyword">const</span> <span class="typename">T</span>&&<span class="parameter">a</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const &&"</span> <span class="member_operator_function"><<</span> std::endl; }
+
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	      <span class="typename">c1</span>&(*      lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span>&{ <span class="keyword">static</span>       <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	      <span class="typename">c1</span> (*      rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span> { <span class="keyword">static</span>       <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> (*const_rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span> { <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+
+	f(lvalue());
+	f(const_lvalue());
+	f(rvalue());
+	f(const_rvalue());
+}
+<img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFIAAABgCAYAAACOniU9AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsIAAA7CARUoSoAAAALlSURBVHhe7ZwBbsIwDEXZTsbRudmGUT+yLCdum19Umv+kjDZOnOQt0G6w/dzv97+bGGcRqTJYfp9fBAGJJCGRJKYT+Xg8lqNtWD+UjKlEjkg0nhfm12OWZwqRvZ3E4nUfefQgnyCuAbvHgzZZrMLnz/pfYkd6QVgkc3PEXDj39Zd8anuhTHzOKHe6q/YoXqY/vqRI2y1xx7Bo5Z3iYtNan29T4XNYP5y/c5jI54PKYNFrJAmJJCGRJCSShESSkEgS04nce89s/VAyTiVy7yLXMiLRwM13luc0Io+UaLmPzG+8f0SMA71/9FnoxbNJjvY3Yo4e1fwNtNmSF/j8Wf/XjvQDoJHvWMXB3v6oM9DG11Wsnd9eYi6c+/r0qb11IRVxcez8kaPy+5xR7sdeI7E4m0CcxDfhZfrjVCR7sT4fBu/lHx1/tH+PVl7qxSZKytqAmN/wbbJ4jzXzi2wZI84N5+8cz4P092sq28pp7iO/HYkkIZEkJJKERJKQSBISSUIiSUgkCYkkIZEkJJKERJKQSBISSUIiSUgkCYkkIZEkJJKERJKQSBLTiWy9x231KBlVfCqRPUkG3uyP7aq4MYVIW3i2eCb6e+0F339P/BI70gvCIqPYHrEtzuMjyOov+dT2Qrfg+0R5Ri8+3VW7wsvKvhmt+CVF2m7JdtQaqn6tuP5ee8G3sXqco00Vt4P0834q24peI0lIJAmJJCGRJCSShESSkEgSEklCIklIJAmJJCGRJCSShESSkEgSEklCIklIJAmJJCGRJCSShESSmE5k6z1uq0fJqOKnEtmaJIueJCP7MIBRxY3TiGwtkoHlPjK/of8fueD774m/dqQfAI18xyoO9vZHnYE2vq5i7fxaxLY4j48gq0+f2lsXUhEXx84f2Zvf94nyjF78Y6+RWJxNIJvkWfCy/DFoxVOR7MX6fBi8l390/JH+Vb9WXP8/ciGOjXO0qeJ2kH7eT2VbOc195Hdzu/0Dr2fHOAHOQPsAAAAASUVORK5CYII=' /></div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">（2）是因为universal reference是用来实现完美转发的。例子是工厂函数make_shared&lt;T, ...T_args>(T_args ...)。T的构造函数能接收什么参数，make_shared就能接收什么参数，拿这些参数在new-initializer里调用T的构造函数得到指针，拿指针调用shared_ptr的构造函数得到shared_ptr对象，返回shared_ptr对象。</p>
+<p class="paragraph_indented">下面的shared_ptr只是为了举例，这样实现其实是不安全的。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="preprocessor_keyword">#include</span><span class="string">&lt;iostream></span>
+<span class="keyword">class</span> <span class="typename">c1</span>
+{
+	<span class="keyword">int</span>*p;
+<span class="keyword">public</span>:
+	c1() :<span class="typename">c1</span>(0) {}
+	c1(<span class="keyword">int</span> <span class="parameter">a</span>) :p(<span class="keyword">new</span> <span class="keyword">int</span>(<span class="parameter">a</span>)) {}
+	~c1() { <span class="keyword">delete</span> p; }
+
+	c1(      <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+
+	<span class="keyword">friend</span> std::<span class="typename">ostream</span>&<span class="member_operator_function">operator<<</span>(std::<span class="typename">ostream</span>&<span class="parameter">os</span>, <span class="keyword">const</span> <span class="typename">c1</span>&<span class="parameter">a</span>);
+};
+
+std::<span class="typename">ostream</span>&<span class="member_operator_function">operator<<</span>(std::<span class="typename">ostream</span>&<span class="parameter">os</span>, <span class="keyword">const</span> <span class="typename">c1</span>&<span class="parameter">a</span>)
+{
+	<span class="keyword">return</span> <span class="parameter">os</span> <span class="member_operator_function"><<</span> *<span class="parameter">a</span>.p;
+}
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">class</span> <span class="typename">shared_ptr</span>
+{
+	<span class="typename">T</span>*p;
+	<span class="typename">size_t</span>*p_count;
+<span class="keyword">public</span>:
+	shared_ptr(<span class="typename">T</span>*<span class="parameter">p</span>) :p(<span class="parameter">p</span>), p_count(<span class="keyword">new</span> <span class="typename">size_t</span>(1)) { std::cout <span class="member_operator_function"><<</span> <span class="string">"*p_count="</span> <span class="member_operator_function"><<</span> *p_count <span class="member_operator_function"><<</span> std::endl; }
+	~shared_ptr()
+	{
+		<span class="keyword">if</span> (p != <span class="keyword">nullptr</span>)
+		{
+			--*p_count; std::cout <span class="member_operator_function"><<</span> <span class="string">"*p_count="</span> <span class="member_operator_function"><<</span> *p_count <span class="member_operator_function"><<</span> std::endl;
+			<span class="keyword">if</span> (*p_count == 0)
+			{
+				<span class="keyword">delete</span> p;
+				<span class="keyword">delete</span> p_count;
+			}
+		}
+	}
+
+	shared_ptr(<span class="keyword">const</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>&<span class="parameter">sp</span>) :p(<span class="parameter">sp</span>.p), p_count(<span class="parameter">sp</span>.p_count) { ++*p_count; std::cout <span class="member_operator_function"><<</span> <span class="string">"*p_count="</span> <span class="member_operator_function"><<</span> *p_count <span class="member_operator_function"><<</span> std::endl; }
+	shared_ptr(<span class="typename">shared_ptr</span><<span class="typename">T</span>>&&<span class="parameter">sp</span>) :p(<span class="parameter">sp</span>.p), p_count(<span class="parameter">sp</span>.p_count) { <span class="parameter">sp</span>.p = <span class="keyword">nullptr</span>;<span class="comment">/* sp.p_count = nullptr;*/</span> }
+
+	<span class="keyword">operator</span> <span class="typename">T</span>*()
+	{
+		<span class="keyword">return</span> p;
+	}
+};
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> ...<span class="emphasize_yellow"><span class="typename">T_args</span></span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="emphasize_yellow"><span class="typename">T_args</span></span> ...<span class="parameter">args</span>)
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(<span class="parameter">args</span>...));
+}
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	      <span class="typename">c1</span>&(*      lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span>&{ <span class="keyword">static</span>       <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	      <span class="typename">c1</span> (*      rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span> { <span class="keyword">static</span>       <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> (*const_rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span> { <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+
+	<span class="typename">shared_ptr</span><<span class="typename">c1</span>>p1 = make_shared<<span class="typename">c1</span>>(3),p2=p1;
+	std::cout <span class="member_operator_function"><<</span> *p1 <span class="member_operator_function"><<</span> *p2 <span class="member_operator_function"><<</span> std::endl;
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">为了简化问题，我们先看只有一个参数的版本：</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> <span class="typename">T_arg</span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="typename">T_arg</span> <span class="parameter">arg</span>)
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(<span class="parameter">arg</span>));
+}
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	      <span class="typename">c1</span>&(*      lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span>&{ <span class="keyword">static</span>       <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	      <span class="typename">c1</span> (*      rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span> { <span class="keyword">static</span>       <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> (*const_rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span> { <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+
+	<span class="typename">shared_ptr</span><<span class="typename">c1</span>>p1 = make_shared<<span class="typename">c1</span>>(lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	<span class="typename">shared_ptr</span><<span class="typename">c1</span>>p2 = make_shared<<span class="typename">c1</span>>(const_lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	<span class="typename">shared_ptr</span><<span class="typename">c1</span>>p3 = make_shared<<span class="typename">c1</span>>(rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	<span class="typename">shared_ptr</span><<span class="typename">c1</span>>p4 = make_shared<<span class="typename">c1</span>>(const_rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+}
+<img src='data:image/png;base64,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' /></div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">给make_shared各种实参，用各种构造函数初始化make_shared的形参，这一步完全没必要，应该把形参的数据类型改成引用；make_shared的形参arg是lvalue（可以回顾第2节的大表格，id-expression那一行），在new-initializer中调用c1的构造函数总是匹配c1&的那个。</p>
+<p class="paragraph_indented">因此我们的任务有以下两个：</p>
+<p class="paragraph_unindented">（1）若给make_shared的实参是lvalue，形参就变成lvalue reference；若给make_shared的实参是rvalue，形参就变成rvalue reference。</p>
+<p class="paragraph_unindented">（2）形参名是lvalue。若刚才给make_shared的实参是lvalue，就把形参直接传给T的构造函数；若刚才给make_shared的实参是rvalue，就把形参转成rvalue，传给T的构造函数。</p>
+<p class="paragraph_indented">假设现在还没有发明universal reference，你可能想用函数重载解决（1）。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> <span class="typename">T_arg</span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="typename">T_arg</span>&<span class="parameter">arg</span>)<span class="comment">//实参是lvalue、const lvalue</span>
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(<span class="parameter">arg</span>));
+}
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> <span class="typename">T_arg</span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="typename">T_arg</span>&&<span class="parameter">arg</span>)<span class="comment">//实参是rvalue、const rvalue</span>
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(<span class="keyword">static_cast</span><<span class="typename">T_arg</span>>(<span class="parameter">arg</span>)));
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">但是设计shared_ptr的人不能预测T的构造函数有多少个参数。当参数多的时候，每个参数都有至少两种情况，就需要定义超级多的模板，肯定是不行的。</p>
+<p class="paragraph_indented">像下面这样试图定义1个模板解决（1）的尝试也都是失败的。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> <span class="typename">T_arg</span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="typename">T_arg</span>&<span class="parameter">arg</span>)<span class="comment">//实参是rvalue时，不会把T_arg变成const c1，而是把T_arg变成c1。c1&不能用rvalue初始化。</span>
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(<span class="parameter">arg</span>));
+	<span class="comment">//实参是lvalue时，T_arg是c1，arg是lvalue。若T的构造函数形参是S&&、const S&&，违反“lvalue不能移动”</span>
+	<span class="comment">//实参是const lvalue、const rvalue时，T_arg是const c1，arg是const lvalue。若T的构造函数形参是S&，违反const；若T的构造函数形参是S&&、const S&&，违反“lvalue不能移动”</span>
+}</div></td></tr>
+<tr><td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> <span class="typename">T_arg</span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="keyword">const</span> <span class="typename">T_arg</span>&<span class="parameter">arg</span>)
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(<span class="parameter">arg</span>));<span class="comment">//arg是const lvalue。若T的构造函数形参是S&，违反const；若T的构造函数形参是S&&、const S&&，违反“lvalue不能移动”</span>
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">然而我们有universal reference，universal reference正好可以完成这个工作。</p>
+
+<table class="table"><tbody>
+<tr>
+	<td><p class="paragraph_unindented">&nbsp;</p></td>
+	<td><p class="paragraph_unindented">某函数调用make_shared时</p></td>
+	<td><p class="paragraph_unindented">make_shared调用T的构造函数时</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">给make_shared的实参是lvalue</p></td>
+	<td><p class="paragraph_unindented">T&&中的T变成c1&</p></td>
+	<td><p class="paragraph_unindented">把形参转成T&&也就是c1&传给构造函数</p></td>
+</tr>
+<tr>
+	<td><p class="paragraph_unindented">给make_shared的实参是rvalue</p></td>
+	<td><p class="paragraph_unindented">T&&中的T变成c1</p></td>
+	<td><p class="paragraph_unindented">把形参转成T&&也就是c1&&传给构造函数</p></td>
+</tr>
+</tbody></table>
+
+
+<p class="paragraph_indented">&nbsp;</p>
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> <span class="typename">T_arg</span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="emphasize_yellow"><span class="typename">T_arg</span>&&</span><span class="parameter">arg</span>)
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(<span class="keyword">static_cast</span><<span class="emphasize_yellow"><span class="typename">T_arg</span>&&</span>>(<span class="parameter">arg</span>)));
+}
+<img src='data:image/png;base64,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' /></div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">最后把make_shared改成参数包的形式，然后试一下2个实参的所有情况，共4^2=16种。这个例子是把参数完美转发给<span class="emphasize_bold">构造函数</span>，同样的方法也可以用于<span class="emphasize_bold">别的函数</span>。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="preprocessor_keyword">#include</span><span class="string">&lt;iostream></span>
+<span class="keyword">class</span> <span class="typename">c1</span>
+{
+	<span class="keyword">int</span>*p;
+<span class="keyword">public</span>:
+	c1() :<span class="typename">c1</span>(0) {}
+	c1(<span class="keyword">int</span> <span class="parameter">a</span>) :p(<span class="keyword">new</span> <span class="keyword">int</span>(<span class="parameter">a</span>)) {}
+	~c1() { <span class="keyword">delete</span> p; }
+
+	c1(      <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+
+	c1(      <span class="typename">c1</span> &<span class="parameter">a1</span>,       <span class="typename">c1</span> &<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &,      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span> &<span class="parameter">a1</span>, <span class="keyword">const</span> <span class="typename">c1</span> &<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &,const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span> &<span class="parameter">a1</span>,       <span class="typename">c1</span>&&<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &,      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span> &<span class="parameter">a1</span>, <span class="keyword">const</span> <span class="typename">c1</span>&&<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &,const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &<span class="parameter">a1</span>,       <span class="typename">c1</span> &<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &,      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &<span class="parameter">a1</span>, <span class="keyword">const</span> <span class="typename">c1</span> &<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &,const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &<span class="parameter">a1</span>,       <span class="typename">c1</span>&&<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &,      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &<span class="parameter">a1</span>, <span class="keyword">const</span> <span class="typename">c1</span>&&<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &,const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&<span class="parameter">a1</span>,       <span class="typename">c1</span> &<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&,      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&<span class="parameter">a1</span>, <span class="keyword">const</span> <span class="typename">c1</span> &<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&,const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&<span class="parameter">a1</span>,       <span class="typename">c1</span>&&<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&,      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&<span class="parameter">a1</span>, <span class="keyword">const</span> <span class="typename">c1</span>&&<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&,const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&<span class="parameter">a1</span>,       <span class="typename">c1</span> &<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&,      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&<span class="parameter">a1</span>, <span class="keyword">const</span> <span class="typename">c1</span> &<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&,const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&<span class="parameter">a1</span>,       <span class="typename">c1</span>&&<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&,      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&<span class="parameter">a1</span>, <span class="keyword">const</span> <span class="typename">c1</span>&&<span class="parameter">a2</span>) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&,const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+
+	<span class="keyword">friend</span> std::<span class="typename">ostream</span>&<span class="member_operator_function">operator<<</span>(std::<span class="typename">ostream</span>&<span class="parameter">os</span>, <span class="keyword">const</span> <span class="typename">c1</span>&<span class="parameter">a</span>);
+};
+
+std::<span class="typename">ostream</span>&<span class="member_operator_function">operator<<</span>(std::<span class="typename">ostream</span>&<span class="parameter">os</span>, <span class="keyword">const</span> <span class="typename">c1</span>&<span class="parameter">a</span>)
+{
+	<span class="keyword">return</span> <span class="parameter">os</span> <span class="member_operator_function"><<</span> *<span class="parameter">a</span>.p;
+}
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">class</span> <span class="typename">shared_ptr</span>
+{
+	<span class="typename">T</span>*p;
+	<span class="typename">size_t</span>*p_count;
+<span class="keyword">public</span>:
+	shared_ptr(<span class="typename">T</span>*<span class="parameter">p</span>) :p(<span class="parameter">p</span>), p_count(<span class="keyword">new</span> <span class="typename">size_t</span>(1)) { std::cout <span class="member_operator_function"><<</span> <span class="string">"*p_count="</span> <span class="member_operator_function"><<</span> *p_count <span class="member_operator_function"><<</span> std::endl; }
+	~shared_ptr()
+	{
+		<span class="keyword">if</span> (p != <span class="keyword">nullptr</span>)
+		{
+			--*p_count; std::cout <span class="member_operator_function"><<</span> <span class="string">"*p_count="</span> <span class="member_operator_function"><<</span> *p_count <span class="member_operator_function"><<</span> std::endl;
+			<span class="keyword">if</span> (*p_count == 0)
+			{
+				<span class="keyword">delete</span> p;
+				<span class="keyword">delete</span> p_count;
+			}
+		}
+	}
+
+	shared_ptr(<span class="keyword">const</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>&<span class="parameter">sp</span>) :p(<span class="parameter">sp</span>.p), p_count(<span class="parameter">sp</span>.p_count) { ++*p_count; std::cout <span class="member_operator_function"><<</span> <span class="string">"*p_count="</span> <span class="member_operator_function"><<</span> *p_count <span class="member_operator_function"><<</span> std::endl; }
+	shared_ptr(<span class="typename">shared_ptr</span><<span class="typename">T</span>>&&<span class="parameter">sp</span>) :p(<span class="parameter">sp</span>.p), p_count(<span class="parameter">sp</span>.p_count) { <span class="parameter">sp</span>.p = <span class="keyword">nullptr</span>;<span class="comment">/* sp.p_count = nullptr;*/</span> }
+
+	<span class="keyword">operator</span> <span class="typename">T</span>*()
+	{
+		<span class="keyword">return</span> p;
+	}
+};
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> ...<span class="typename">T_args</span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="typename">T_args</span> &&...<span class="parameter">args</span>)
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(<span class="keyword">static_cast</span><<span class="typename">T_args</span>&&>(<span class="parameter">args</span>)...));
+}
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	      <span class="typename">c1</span>&(*      lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span>&{ <span class="keyword">static</span>       <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	      <span class="typename">c1</span> (*      rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span> { <span class="keyword">static</span>       <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> (*const_rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span> { <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+
+	shared_ptr<<span class="typename">c1</span>>p1 = make_shared<<span class="typename">c1</span>>(lvalue(), lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p2 = make_shared<<span class="typename">c1</span>>(lvalue(), const_lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p3 = make_shared<<span class="typename">c1</span>>(lvalue(), rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p4 = make_shared<<span class="typename">c1</span>>(lvalue(), const_rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+
+	shared_ptr<<span class="typename">c1</span>>p5 = make_shared<<span class="typename">c1</span>>(const_lvalue(), lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p6 = make_shared<<span class="typename">c1</span>>(const_lvalue(), const_lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p7 = make_shared<<span class="typename">c1</span>>(const_lvalue(), rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p8 = make_shared<<span class="typename">c1</span>>(const_lvalue(), const_rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+
+	shared_ptr<<span class="typename">c1</span>>p9 = make_shared<<span class="typename">c1</span>>(rvalue(), lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p10 = make_shared<<span class="typename">c1</span>>(rvalue(), const_lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p11 = make_shared<<span class="typename">c1</span>>(rvalue(), rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p12 = make_shared<<span class="typename">c1</span>>(rvalue(), const_rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+
+	shared_ptr<<span class="typename">c1</span>>p13 = make_shared<<span class="typename">c1</span>>(const_rvalue(), lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p14 = make_shared<<span class="typename">c1</span>>(const_rvalue(), const_lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p15 = make_shared<<span class="typename">c1</span>>(const_rvalue(), rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	shared_ptr<<span class="typename">c1</span>>p16 = make_shared<<span class="typename">c1</span>>(const_rvalue(), const_rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+}</div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">之前做了一个函数move，接收lvalue和rvalue，返回rvalue。std::move(a)比static_cast&lt;int&&>(a)更expressive。现在再写一个函数forward，接收universal reference形参，若universal reference形参的实参是lvalue，返回lvalue；若universal reference形参的实参是rvalue，返回rvalue。这样make_shared中的shared_ptr&lt;T>(new T(static_cast&lt;T_args&&>(args)...))就能写成shared_ptr&lt;T>(new T(forward(args)...))。</p>
+<p class="paragraph_indented">无论universal reference形参的实参是lvalue还是rvalue，形参名都是lvalue，所以要让forward表现出多态就<span class="emphasize_bold emphasize_yellow">必须提供更多的信息</span>，比如说把T&&的T传给它。forward接收的是universal reference形参，永远是lvalue，所以forward的形参就是T&。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr>
+	<td></td>
+	<td><div class="code">make_shared(T_arg&&)的T_arg</div></td>
+	<td><div class="code">forward</div></td>
+</tr>
+<tr>
+	<td><div class="code">给make_shared的实参是lvalue</div></td>
+	<td><div class="code">c1&</div></td>
+<td><div class="code"><span class="emphasize_yellow">c1&</span> &&forward(<span class="emphasize_yellow">c1&</span> &a)
+{
+	return static_cast<<span class="emphasize_yellow">c1&</span> &&>(a);
+}</div></td>
+</tr>
+<tr>
+	<td><div class="code">给make_shared的实参是rvalue</div></td>
+	<td><div class="code">c1</div></td>
+<td><div class="code"><span class="emphasize_yellow">c1</span> &&forward(<span class="emphasize_yellow">c1</span> &a)
+{
+	return static_cast<<span class="emphasize_yellow">c1</span> &&>(a);
+}</div></td>
+</tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">&nbsp;</p>
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="typename">T</span>&&forward(<span class="typename">T</span>&<span class="parameter">a</span>)
+{
+	<span class="keyword">return</span> <span class="keyword">static_cast</span><<span class="typename">T</span>&&>(<span class="parameter">a</span>);
+}
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> ...<span class="typename">T_args</span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="typename">T_args</span> &&...<span class="parameter">args</span>)
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(forward<<span class="typename">T_args</span>>(<span class="parameter">args</span>)...));
+}
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	      <span class="typename">c1</span>&(*      lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span>&{ <span class="keyword">static</span>       <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	      <span class="typename">c1</span> (*      rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span> { <span class="keyword">static</span>       <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> (*const_rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span> { <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+
+	<span class="typename">shared_ptr</span><<span class="typename">c1</span>>p1 = make_shared<<span class="typename">c1</span>>(lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	<span class="typename">shared_ptr</span><<span class="typename">c1</span>>p2 = make_shared<<span class="typename">c1</span>>(const_lvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	<span class="typename">shared_ptr</span><<span class="typename">c1</span>>p3 = make_shared<<span class="typename">c1</span>>(rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+	<span class="typename">shared_ptr</span><<span class="typename">c1</span>>p4 = make_shared<<span class="typename">c1</span>>(const_rvalue()); std::cout <span class="member_operator_function"><<</span> std::endl;
+}
+<img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFIAAADQCAIAAAAbNqEfAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAVqSURBVHhe7ZtpYqQ6DITz5mQ5Wo6Wo43ockQ9yxtLemyk7wcjtKEyTUMy5L/Pz88Ph/iU/Sf964yQ7YklZX9/fyerh2SCtP/DerKthhrIxHd2VrWS7O2sDWtus9237+p1IzxSdotFaPC+q32y/BnPtgrDrKfPChfCVs/sH3IVfxot51VY8pv8KKpcjdllyynis3QO22GlrzQ7p4ZqaInKTCXdykfi4tq2hGxPhGxPhOznYm/468m2GtoU85NsiWmY7dk4NFhDyP5wyhl4dINHE2DDqGGbgKJf+xdtJctnxkO6CzbZX19fae//SMhOk9UzteS7bLs7QrFk+5CLK/Naz1GudziEaMtIgQr7tS1bnbVbNhuYnEmBCkk2p7J9mteK/+LaXezf+Xk7C3WXg/M5uevXMdiQLduAS2DU0ExFS4ZkZweo5XfnmIeWbPYvJGmIp+kZY72H01sI2Z4I2Z4I2Z4I2Z4I2Z4I2Z4I2Z4I2Z4I2Z4I2evQ+A13hmSCtP/D+2TbY59jvA8y8avhrOpNsm/RLE1u6SOk/x7gdvyb86KfncLRfIFLitTmERDqdgDaJ8vfzrY2QkxTa35g/bV87MIA2K3RPu44XAhbPfmHXA92Ap7ySh/meh8t51W4+drGlHIAPsY/R5Wrkcu+MrHWonuxj+YMcjS/iO1w/iuNtWUhwH0EDWX+Io3jMt1WfFDYqWRkiOfxpvv2bIRsT4RsT4Ts52Jv+OvJthraFPOTbIlpmO3ZODRYQ8j+Oh5n4NENHk2ADaOGbQKKfu1ftJUsnxkP6S7YZMf75AnrOcr1DocQbRkpUGG/tmWrs3bLZgOTMylQIcnmVLZP81rxX1y7i/1bbxgLWai7HJzPyV2/jsGGbNkGXAKjhmYqWjIkOztALb87xzy0ZLN/IUlDPE3PGOs9nN5CyPZEyPZEyPZEyPZEyPZEyPZEyPZEyPZEyPZEyPZEyPZEyPZEyPZEyPZEyPZEyPZEyPZEyF4H+2qVeEDa/yF5jX892VYDPHjliqM1v7CSbBk9m/40nbcQ/xU8UvbmHEJFpzDon/FsqzDMyktQhBNg8xZkntk/5Cq+i6axWqHoX/KbvIYqzFbK+meXLacoO3sNapnWv9JXmp3ThlQOQjX/XumKR13b44RsT4RsT4Ts52Jv+OvJthraFPOTbIlpmO3ZODRYQ8j+cMoZ/GSnCbBh1LBNQNGv/Yu2kuUz4yHdBZvs+PvthPUc5XqHQ4i2jBSosF/bstVZu2WzgcmZFKiQZHMq26d5rfgvrt3F/p2ft7NQdzk4n5O7fh2DDdmyDbgERg3NVLRkSHZ2gFp+d455aMlm/0KShnianjHWezi9hZDtiZDtiZDtiZDtiZDtiZDtiZDtiZDtiZDtiZDtiZDtiZDtiZDtiZDtiZDtiZDtiZDtiZC9DvbVKvGAtP9D8hr/+2TbY5/D9oEHr1xxtOYX3iTbznoCaXJLHyG9jsft+E21op+dwtF8gUuK1OYRECo6hUH/dra1EWKaWvMD66/lYxcGwG6N9nEtnACbtyDz5B9yPdgJeMorfZjxPprGaoWi/+Zr+zVkftW8DVWoBrD+XPaVibUW3Yt9NGeQQ/m1TOs//5XG2rIQ4D6ChjJ/kcZxGRsSD2yEav690hVvum/PRsj2RMj2RMh+LvaGv55sq6FNMT/JlpiG2Z6NQ4M1hOx//sYZ/GSnCbBh1LBNQNGv/Yu2kuUz4yHdBZvs+PvthPUc5XqHQ4i2jBSosF/bstVZu2WzgcmZFKiQZHMq26d5rfgvrt3F/q2/6BWyUHc5OJ+Tu34dgw3Zsg24BEYNzVS0ZEh2doBafneOeWjJZv9Ckvp8fPwFM38E/wSRvz0AAAAASUVORK5CYII=' /></div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">还有一点不足，如果不小心把forward&lt;T_args>(args)...写成forward(args)...，forward的T仍然能推导出来（c1或const c1），程序员得不到任何警告，运行了才知道有错。</p>
+<p class="paragraph_unindented"><img src='data:image/png;base64,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' /></p>
+<p class="paragraph_indented">为了让程序员省不了模板实参列表，需要在forward的形参上做手脚，这样一旦不写模板实参列表就推不出T。</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="keyword">struct</span> <span class="typename">identity</span> { <span class="keyword">typedef</span> <span class="typename">T</span> <span class="typename">type</span>; };
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="typename">T</span>&&forward(<span class="keyword">typename</span> <span class="typename">identity</span><<span class="typename">T</span>>::<span class="typename">type</span>&<span class="parameter">a</span>)
+{
+	<span class="keyword">return</span> <span class="keyword">static_cast</span><<span class="typename">T</span>&&>(<span class="parameter">a</span>);
+}
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> ...<span class="typename">T_args</span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="typename">T_args</span> &&...<span class="parameter">args</span>)
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(forward<<span class="typename">T_args</span>>(<span class="parameter">args</span>)...));
+}</div></td></tr>
+<tr><td><div class="code"><span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>><span class="keyword">struct</span> <span class="typename">remove_reference</span> { <span class="keyword">typedef</span> <span class="typename">T</span> <span class="typename">type</span>; };
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>><span class="keyword">struct</span> <span class="typename">remove_reference</span><<span class="typename">T</span>&> { <span class="keyword">typedef</span> <span class="typename">T</span> <span class="typename">type</span>; };
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>>
+<span class="typename">T</span>&&forward(<span class="keyword">typename</span> <span class="typename">remove_reference</span><<span class="typename">T</span>>::<span class="typename">type</span>&<span class="parameter">a</span>)
+{
+	<span class="keyword">return</span> <span class="keyword">static_cast</span><<span class="typename">T</span>&&>(<span class="parameter">a</span>);
+}
+
+<span class="keyword">template</span><<span class="keyword">typename</span> <span class="typename">T</span>, <span class="keyword">typename</span> ...<span class="typename">T_args</span>>
+<span class="typename">shared_ptr</span><<span class="typename">T</span>>make_shared(<span class="typename">T_args</span> &&...<span class="parameter">args</span>)
+{
+	<span class="keyword">return</span> <span class="typename">shared_ptr</span><<span class="typename">T</span>>(<span class="keyword">new</span> <span class="typename">T</span>(forward<<span class="typename">T_args</span>>(<span class="parameter">args</span>)...));
+}</div></td></tr>
+</tbody></table></div>
+
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_unindented">5 non-static成员函数的ref-qualifier（引用限定符）</p>
+<p class="paragraph_indented">现在看一下与复制有关的问题已经解决几个了：</p>
+<p class="paragraph_unindented">（1）实参传给形参。若实参是rvalue，会匹配移动构造函数。</p>
+<p class="paragraph_unindented">（2）赋值运算符。若右操作数是rvalue，会匹配移动赋值运算符函数。</p>
+<p class="paragraph_unindented">（3）函数返回值。copy elision。</p>
+<p class="paragraph_unindented">（4）就是要将lvalue中的资源移走，怎样把lvalue当rvalue用。std::move和std::forward。</p>
+<p class="paragraph_unindented">（5）在lvalue对象和rvalue对象上分别调用同名函数成员，分别匹配到不同函数成员。（例如rvalue对象匹配的函数成员会把对象中的资源移动到返回值temporary中，而lvalue对象是复制。rvalue对象匹配的函数成员返回rvalue，lvalue对象匹配的函数成员返回lvalue。）关键是*this的value category不同，类似于（1）。</p>
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_indented">（5）可以用ref-qualifier解决。ref-qualifier只有&和&&。</p>
+<p class="paragraph_indented">先回顾不使用ref-qualifier的情况：</p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="preprocessor_keyword">#include</span><span class="string">&lt;iostream></span>
+<span class="keyword">class</span> <span class="typename">c1</span>
+{
+	<span class="keyword">int</span>*p;
+<span class="keyword">public</span>:
+	c1() :<span class="typename">c1</span>(0) {}
+	c1(<span class="keyword">int</span> <span class="parameter">a</span>) :p(<span class="keyword">new</span> <span class="keyword">int</span>(<span class="parameter">a</span>)) {}
+	~c1() { <span class="keyword">delete</span> p; }
+
+	c1(      <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+
+	<span class="keyword">void</span> f(<span class="keyword">void</span>)         { std::cout <span class="member_operator_function"><<</span> <span class="string">"non-const"</span> <span class="member_operator_function"><<</span> std::endl };
+	<span class="keyword">void</span> f(<span class="keyword">void</span>) <span class="keyword">const</span>   { std::cout <span class="member_operator_function"><<</span> <span class="string">"    const"</span> <span class="member_operator_function"><<</span> std::endl };
+	<span class="comment">//void f(void)       & { std::cout << "      c1 &" << std::endl; }</span>
+	<span class="comment">//void f(void) const & { std::cout << "const c1 &" << std::endl; }</span>
+	<span class="comment">//void f(void)       &&{ std::cout << "      c1&&" << std::endl; }</span>
+	<span class="comment">//void f(void) const &&{ std::cout << "const c1&&" << std::endl; }</span>
+};
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	      <span class="typename">c1</span>&(*      lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span>&{ <span class="keyword">static</span>       <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	      <span class="typename">c1</span> (*      rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span> { <span class="keyword">static</span>       <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> (*const_rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span> { <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+
+	lvalue().f();
+	const_lvalue().f();
+	rvalue().f();
+	const_rvalue().f();
+}
+<img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEkAAABgCAIAAADessh1AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAH5SURBVHhe7dhrisMwDATgHG2PnqOtrJkYPxITaOJ2jL5f0tgkDJTu0u1vXanbtqropim6aVqm277vnLI1ulmx8244yHjgGDlGdWiYDvGqY+QYOUbD5zNyjLr7hge5G9bP58bpnWdn06z0YLcrV3fK/M5smjU7z7W6QR/2STK52xuzyWsekkE3gxUY1XfKeQDXgJFj5BgNn48VGB2Ylrl147Se6KYpummKbpqim4Dqrzas0a39jwTmdMO7gZFj5BjVoWHqGDlG3X3Dgwndyve9MZtmpcndSmV+ZzbNmp3nWt2gD/skWewzmYfkZ79L+tlgBUYHpmU+p9t3RDdN0U1TdNMU3TRFN03RTVN00xTdNEU3TdFNU3TTFN0EVL+6whrd2l+UwbrhIOOBY+QY1aFhOsSrjpFj5BgNn8/IMeruGx7kblg/nxund56dTbPSg92uXN0p8zuzadbsPNfqBn3YJ8nkbm/MJq95SAbdDFZgVN8p5wFcA0aOkWM0fD5WYHRgWubWjdN6opum6KYpummKbpqim6bopim6aYpumqKbpuimKbppim4Cql9dYY1u7S/KMKcb3g2MHCPHqA4NU8fIMeruGx5M6Fa+743ZNCtN7lYq8zuzadbsPNfqBn3YJ8lin8k8JD/7XdLPBiswOjAt8zndvmPZbtv2D/p40cxy8HRZAAAAAElFTkSuQmCC' /></div></td></tr>
+</tbody></table></div>
+
+<p class="paragraph_indented">再看一下使用ref-qualifier的情况。<span class="emphasize_red">不使用ref-qualifier的和使用ref-qualifier的不能同时出现。</span></p>
+
+<div class="scroll"><table class="table"><tbody>
+<tr><td><div class="code"><span class="preprocessor_keyword">#include</span><span class="string">&lt;iostream></span>
+<span class="keyword">class</span> <span class="typename">c1</span>
+{
+	<span class="keyword">int</span>*p;
+<span class="keyword">public</span>:
+	c1() :<span class="typename">c1</span>(0) {}
+	c1(<span class="keyword">int</span> <span class="parameter">a</span>) :p(<span class="keyword">new</span> <span class="keyword">int</span>(<span class="parameter">a</span>)) {}
+	~c1() { <span class="keyword">delete</span> p; }
+
+	c1(      <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span> &a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(      <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+	c1(<span class="keyword">const</span> <span class="typename">c1</span>&&a) :<span class="typename">c1</span>(*a.p) { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&"</span> <span class="member_operator_function"><<</span> std::endl; }
+
+	<span class="comment">//void f(void)         { std::cout << "non-const" << std::endl; }</span>
+	<span class="comment">//void f(void) const   { std::cout << "    const" << std::endl; }</span>
+	<span class="keyword">void</span> f(<span class="keyword">void</span>)       & { std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1 &"</span> <span class="member_operator_function"><<</span> std::endl };
+	<span class="keyword">void</span> f(<span class="keyword">void</span>) <span class="keyword">const</span> & { std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1 &"</span> <span class="member_operator_function"><<</span> std::endl };
+	<span class="keyword">void</span> f(<span class="keyword">void</span>)       &&{ std::cout <span class="member_operator_function"><<</span> <span class="string">"      c1&&"</span> <span class="member_operator_function"><<</span> std::endl };
+	<span class="keyword">void</span> f(<span class="keyword">void</span>) <span class="keyword">const</span> &&{ std::cout <span class="member_operator_function"><<</span> <span class="string">"const c1&&"</span> <span class="member_operator_function"><<</span> std::endl };
+};
+
+<span class="keyword">int</span> main(<span class="keyword">void</span>)
+{
+	      <span class="typename">c1</span>&(*      lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span>&{ <span class="keyword">static</span>       <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span>&(*const_lvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span>&{ <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; <span class="keyword">return</span> a; };
+	      <span class="typename">c1</span> (*      rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)->      <span class="typename">c1</span> { <span class="keyword">static</span>       <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+	<span class="keyword">const</span> <span class="typename">c1</span> (*const_rvalue)(<span class="keyword">void</span>) = [](<span class="keyword">void</span>)-><span class="keyword">const</span> <span class="typename">c1</span> { <span class="keyword">static</span> <span class="keyword">const</span> <span class="typename">c1</span> a; std::cout <span class="member_operator_function"><<</span> <span class="string">"\t\t\tlambda copy: "</span>; <span class="keyword">return</span> a; };
+
+	lvalue().f();
+	const_lvalue().f();
+	rvalue().f();
+	const_rvalue().f();
+}
+<img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFIAAABgCAYAAACOniU9AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsIAAA7CARUoSoAAAALlSURBVHhe7ZwBbsIwDEXZTsbRudmGUT+yLCdum19Umv+kjDZOnOQt0G6w/dzv97+bGGcRqTJYfp9fBAGJJCGRJKYT+Xg8lqNtWD+UjKlEjkg0nhfm12OWZwqRvZ3E4nUfefQgnyCuAbvHgzZZrMLnz/pfYkd6QVgkc3PEXDj39Zd8anuhTHzOKHe6q/YoXqY/vqRI2y1xx7Bo5Z3iYtNan29T4XNYP5y/c5jI54PKYNFrJAmJJCGRJCSShESSkEgS04nce89s/VAyTiVy7yLXMiLRwM13luc0Io+UaLmPzG+8f0SMA71/9FnoxbNJjvY3Yo4e1fwNtNmSF/j8Wf/XjvQDoJHvWMXB3v6oM9DG11Wsnd9eYi6c+/r0qb11IRVxcez8kaPy+5xR7sdeI7E4m0CcxDfhZfrjVCR7sT4fBu/lHx1/tH+PVl7qxSZKytqAmN/wbbJ4jzXzi2wZI84N5+8cz4P092sq28pp7iO/HYkkIZEkJJKERJKQSBISSUIiSUgkCYkkIZEkJJKERJKQSBISSUIiSUgkCYkkIZEkJJKERJKQSBLTiWy9x231KBlVfCqRPUkG3uyP7aq4MYVIW3i2eCb6e+0F339P/BI70gvCIqPYHrEtzuMjyOov+dT2Qrfg+0R5Ri8+3VW7wsvKvhmt+CVF2m7JdtQaqn6tuP5ee8G3sXqco00Vt4P0834q24peI0lIJAmJJCGRJCSShESSkEgSEklCIklIJAmJJCGRJCSShESSkEgSEklCIklIJAmJJCGRJCSShESSmE5k6z1uq0fJqOKnEtmaJIueJCP7MIBRxY3TiGwtkoHlPjK/of8fueD774m/dqQfAI18xyoO9vZHnYE2vq5i7fxaxLY4j48gq0+f2lsXUhEXx84f2Zvf94nyjF78Y6+RWJxNIJvkWfCy/DFoxVOR7MX6fBi8l390/JH+Vb9WXP8/ciGOjXO0qeJ2kH7eT2VbOc195Hdzu/0Dr2fHOAHOQPsAAAAASUVORK5CYII=' /></div></td></tr>
+</tbody></table></div>
+
+
+<p class="paragraph_indented">&nbsp;</p>
+<p class="paragraph_unindented">参考：</p>
+<p class="paragraph_unindented">1 表达式的value category定义</p>
+	<p class="paragraph_indented"><span class="hyperlink"><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2010/n3055.pdf" target="_blank">A Taxonomy of Expression Value Categories</a></span></p>
+<p class="paragraph_unindented">2 判定表达式的value category</p>
+<p class="paragraph_unindented">3 rvalue reference（右值引用）、move semantics（移动语义）</p>
+	<p class="paragraph_indented"><span class="hyperlink"><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/1993/N0345.pdf" target="_blank">Lifetime of temporaries explicitly bound to references</a></span></p>
+	<p class="paragraph_indented"><span class="hyperlink"><a href="https://blogs.msdn.microsoft.com/vcblog/2009/02/03/rvalue-references-c0x-features-in-vc10-part-2/" target="_blank">Rvalue References: C++0x Features in VC10, Part 2</a></span>（<span class="hyperlink"><a href="https://www.ptt.cc/man/C_and_CPP/DD8B/M.1470851378.A.1B1.html" target="_blank">网友翻译</a></span>、<span class="hyperlink"><a href="http://peter.xiau.googlepages.com/rvalue_ch.pdf" target="_blank">网友翻译pdf</a></span>）</p>
+<p class="paragraph_unindented">4 universal reference（通用引用）、perfect forwarding（完美转发）</p>
+	<p class="paragraph_indented"><span class="hyperlink"><a href="http://thbecker.net/articles/rvalue_references/section_01.html" target="_blank">C++ Rvalue References Explained</a></span></p>
+	<p class="paragraph_indented"><span class="hyperlink"><a href="https://scottmeyers.blogspot.com/2012/11/universal-references-in-c11-now-online.html" target="_blank">Universal References in C++11</a></span>（<span class="hyperlink"><a href="https://accu.org/var/uploads/journals/Overload111.pdf" target="_blank">Overload version</a></span>、<span class="hyperlink"><a href="https://channel9.msdn.com/Shows/Going+Deep/Cpp-and-Beyond-2012-Scott-Meyers-Universal-References-in-Cpp11" target="_blank">Channel 9 version</a></span>、<span class="hyperlink"><a href="https://isocpp.org/blog/2012/11/universal-references-in-c11-scott-meyers" target="_blank">ISOCpp.org version</a></span>）</p>
+<p class="paragraph_unindented">5 non-static成员函数的ref-qualifier（引用限定符）</p>
+	<p class="paragraph_indented"><span class="hyperlink"><a href="https://akrzemi1.wordpress.com/2014/06/02/ref-qualifiers/" target="_blank">Ref-qualifiers</a></span></p>
+	<p class="paragraph_indented"><span class="hyperlink"><a href="http://blog.bitwigglers.org/introducing-ref-qualifiers-for-member-functions/" target="_blank">Introducing ref-qualifiers for member functions</a></span></p>
+<p class="paragraph_unindented">6 想要阅读更多可以直接参考专业书籍（第4节参考的资料是Thomas Becker和Scott Meyers写的）</p>
+	<p class="paragraph_indented"><span class="hyperlink"><a href="http://www.stroustrup.com/papers.html" target="_blank">Bjarne Stroustrup的书</a></span></p>
+	<p class="paragraph_indented"><span class="hyperlink"><a href="http://www.aristeia.com/books.html" target="_blank">Scott Meyers的书</a></span></p>
+	<p class="paragraph_indented"><span class="hyperlink"><a href="http://thbecker.net/professional/resume.html" target="_blank">Thomas Becker的书</a></span></p>
+
+</body>
+</html>
